@@ -1,0 +1,24 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue:    #1a73e8;
+  --blue2:   #1557b0;
+  --teal:    #0097a7;
+  --green:   #34a853;
+  --red:     #ea4335;
+  --amber:   #f9ab00;
+  --purple:  #7c3aed;
+  --bg:      #f0f4ff;
+  --surface: #ffffff;
+  --border:  #e3eaf5;
+  --text:    #1a1a2e;
+  --muted:   #6b7a99;
+}
+
+html, body, #root { height: 100%; background: var(--bg); color: var(--text); scroll-behavior: smooth; }
+.leaflet-pane { z-index: 400 !important; }
+.leaflet-top, .leaflet-bottom { z-index: 500 !important; }
+.leaflet-routing-container { display: none !important; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #f0f4ff; }
+::-webkit-scrollbar-thumb { background: #c7d7f5; border-radius: 4px; }

@@ -1,0 +1,52 @@
+# ══════════════════════════════════════════════════════════════════
+#  IntelliCrash v4 — Python Requirements
+#  Python 3.10 / 3.11 / 3.12 compatible
+#  Install: pip install -r requirements.txt
+# ══════════════════════════════════════════════════════════════════
+
+# ── Web Framework ─────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+starlette==0.41.3
+
+# ── Data & ML (core — required) ───────────────────────────────────
+numpy==2.0.2
+pandas==2.2.3
+scikit-learn==1.5.2
+joblib==1.4.2
+
+# ── API & Validation ──────────────────────────────────────────────
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+requests==2.32.3
+
+# ── Rate Limiting ─────────────────────────────────────────────────
+slowapi==0.1.9
+
+# ── Communication ─────────────────────────────────────────────────
+twilio==9.3.7
+
+# ── Export ────────────────────────────────────────────────────────
+openpyxl==3.1.5
+
+# ══════════════════════════════════════════════════════════════════
+#  OPTIONAL — LSTM Neural Network (install separately)
+#
+#  Pick ONE depending on your system:
+#
+#  Option A — With GPU (NVIDIA CUDA):
+#    pip install tensorflow==2.16.2
+#
+#  Option B — CPU only (lighter, works on any machine):
+#    pip install tensorflow-cpu==2.16.2
+#
+#  Option C — Mac with Apple Silicon (M1/M2/M3):
+#    pip install tensorflow-macos==2.16.2
+#    pip install tensorflow-metal==1.1.0
+#
+#  If TensorFlow is NOT installed:
+#    → App still works, prediction uses RF only (no LSTM)
+#    → All other features work normally
+# ══════════════════════════════════════════════════════════════════

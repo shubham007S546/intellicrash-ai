@@ -1,0 +1,21 @@
+{
+  "name": "IntelliCrash — HP Road Safety",
+  "short_name": "IntelliCrash",
+  "description": "AI-powered safe navigation for Himachal Pradesh mountain roads",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0f4ff",
+  "theme_color": "#1a73e8",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" },
+    { "src": "/favicon.ico", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/favicon.ico", "sizes": "512x512", "type": "image/png" }
+  ],
+  "categories": ["navigation", "travel", "utilities"],
+  "shortcuts": [
+    { "name": "Navigate",  "url": "/navigation", "description": "Open navigation" },
+    { "name": "SOS",       "url": "/sos",         "description": "Emergency SOS" },
+    { "name": "Predict",   "url": "/predict",     "description": "Risk prediction" }
+  ]
+}

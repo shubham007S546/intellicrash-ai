@@ -1,0 +1,43 @@
+# ─── ENV FILES ───
+.env
+.env.*
+*/.env
+
+# ─── NODE ───
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── PYTHON ───
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# ─── VENV ───
+venv/
+myenv/
+env/
+
+# ─── ML FILES (OPTIONAL: keep if needed) ───
+*.pkl
+*.h5
+
+# ─── OS FILES ───
+.DS_Store
+Thumbs.db
+
+# ─── BUILD ───
+dist/
+build/
+
+# ─── IDE ───
+.vscode/
+.idea/
+
+# ─── LOGS ───
+logs/
+*.log

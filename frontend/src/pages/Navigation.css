@@ -1,0 +1,684 @@
+/**
+ * Navigation.css — IntelliCrash v9.2 Final
+ * Dark delivery-app aesthetic — matching video style
+ * Zomato/Swiggy clone dark nav UI with Google Maps feel
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+/* ── RESET & BASE ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ── TOP NAVBAR ─────────────────────────────────────────────────── */
+.nav-root {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 58px;
+  padding: 0 20px;
+  background: #0a0a0f;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  position: sticky;
+  top: 0;
+  z-index: 2000;
+  font-family: 'DM Sans', sans-serif;
+  box-shadow: 0 2px 24px rgba(0,0,0,0.6);
+}
+
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nav-logo-icon {
+  width: 34px;
+  height: 34px;
+  background: linear-gradient(135deg, #f97316, #ef4444);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(249,115,22,0.45);
+}
+
+.nav-logo-text {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 19px;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+}
+
+.nav-logo-text span { color: #f97316; }
+
+.nav-logo-badge {
+  font-size: 9px;
+  font-weight: 700;
+  background: rgba(249,115,22,0.15);
+  color: #f97316;
+  border: 1px solid rgba(249,115,22,0.3);
+  border-radius: 5px;
+  padding: 2px 7px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* ── Desktop links ── */
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-links li { list-style: none; }
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 15px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.55);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  white-space: nowrap;
+  border: none;
+  background: transparent;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.nav-link:hover {
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.9);
+}
+
+.nav-link.active {
+  background: rgba(249,115,22,0.12);
+  color: #f97316;
+  font-weight: 700;
+}
+
+.nav-link-icon { font-size: 15px; line-height: 1; }
+
+/* ── Right actions ── */
+.nav-right { display: flex; align-items: center; gap: 8px; }
+
+/* ── SOS button ── */
+.nav-sos {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 16px;
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: all 0.15s;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 12px rgba(239,68,68,0.4);
+}
+
+.nav-sos:hover {
+  background: #dc2626;
+  transform: scale(1.03);
+  box-shadow: 0 4px 18px rgba(239,68,68,0.55);
+}
+
+.nav-lang {
+  padding: 6px 13px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: all 0.15s;
+}
+
+.nav-lang:hover {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.9);
+}
+
+/* ── Mobile hamburger ── */
+.nav-hamburger {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  color: rgba(255,255,255,0.6);
+  transition: background 0.15s;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-hamburger:hover { background: rgba(255,255,255,0.06); }
+.nav-hamburger svg { width: 22px; height: 22px; }
+
+/* ── Mobile drawer ── */
+.nav-drawer {
+  display: none;
+  position: fixed;
+  top: 58px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1900;
+  backdrop-filter: blur(4px);
+}
+
+.nav-drawer.open { display: block; }
+
+.nav-drawer-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 280px;
+  height: 100%;
+  background: #0f0f18;
+  border-right: 1px solid rgba(255,255,255,0.07);
+  padding: 16px 12px;
+  box-shadow: 4px 0 32px rgba(0,0,0,0.5);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: slideIn 0.22s ease;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(-100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+.nav-drawer-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.65);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+  background: transparent;
+  font-family: 'DM Sans', sans-serif;
+  width: 100%;
+  text-align: left;
+}
+
+.nav-drawer-link:hover {
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.9);
+}
+
+.nav-drawer-link.active {
+  background: rgba(249,115,22,0.12);
+  color: #f97316;
+  font-weight: 700;
+}
+
+.nav-drawer-icon { font-size: 19px; width: 26px; text-align: center; flex-shrink: 0; }
+
+.nav-drawer-sos {
+  margin-top: auto;
+  padding: 12px;
+  background: rgba(239,68,68,0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  width: 100%;
+  text-align: center;
+  transition: background 0.15s;
+}
+
+.nav-drawer-sos:hover { background: rgba(239,68,68,0.2); }
+
+/* ── SIDE PANEL — dark card ─────────────────────────────────────── */
+.intellicrash-panel {
+  background: #0f0f18 !important;
+  color: #f0f0f8 !important;
+  box-shadow: 2px 0 32px rgba(0,0,0,0.5) !important;
+}
+
+/* ── Leaflet overrides ── */
+.leaflet-container {
+  font-family: 'DM Sans', sans-serif !important;
+  background: #1a1f2e !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #1a1f2e !important;
+  color: #e0e0f0 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 13px !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+}
+
+.leaflet-popup-tip {
+  background: #1a1f2e !important;
+}
+
+/* ── Vehicle marker ── */
+.veh-icon { background: transparent !important; border: none !important; }
+
+.veh-rotator {
+  width: 56px;
+  height: 56px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.veh-body {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  position: relative;
+  z-index: 2;
+}
+
+.veh-nose {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 12px solid currentColor;
+  z-index: 3;
+}
+
+.veh-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 13px;
+  line-height: 1;
+  z-index: 4;
+  pointer-events: none;
+}
+
+@keyframes vp {
+  0%, 100% { box-shadow: 0 2px 16px rgba(249,115,22,0.55), 0 0 0 8px rgba(249,115,22,0.1); }
+  50%       { box-shadow: 0 4px 28px rgba(249,115,22,0.8), 0 0 0 18px rgba(249,115,22,0.05); }
+}
+
+/* ── Map tile dark blend ── */
+.leaflet-tile { filter: brightness(0.6) saturate(0.7) hue-rotate(200deg) !important; }
+
+/* ── Risk badge ── */
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.risk-badge.high   { background: rgba(220,38,38,0.15); color: #f87171; border: 1px solid rgba(220,38,38,0.3); }
+.risk-badge.medium { background: rgba(217,119,6,0.15);  color: #fbbf24; border: 1px solid rgba(217,119,6,0.3); }
+.risk-badge.safe   { background: rgba(22,163,74,0.15);  color: #4ade80; border: 1px solid rgba(22,163,74,0.3); }
+
+/* ── MUI overrides for dark panel ── */
+.MuiChip-root { font-family: 'DM Sans', sans-serif !important; }
+
+.MuiLinearProgress-root {
+  background: rgba(255,255,255,0.08) !important;
+  border-radius: 4px !important;
+}
+
+/* ── Input fields (dark) ── */
+.dark-input {
+  background: rgba(255,255,255,0.05) !important;
+  border: 1.5px solid rgba(255,255,255,0.1) !important;
+  color: #f0f0f8 !important;
+  border-radius: 12px !important;
+}
+
+.dark-input:focus-within {
+  background: rgba(255,255,255,0.08) !important;
+  border-color: #f97316 !important;
+  box-shadow: 0 0 0 3px rgba(249,115,22,0.15) !important;
+}
+
+/* ── Vehicle selector btns ── */
+.vehicle-btn {
+  padding: 7px 11px;
+  border: 1.5px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.5);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.vehicle-btn:hover {
+  background: rgba(249,115,22,0.1);
+  border-color: rgba(249,115,22,0.3);
+}
+
+/* ── Go button ── */
+.go-btn-main {
+  padding: 9px 22px;
+  border: none;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #f97316, #ef4444);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  box-shadow: 0 4px 18px rgba(249,115,22,0.45);
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.go-btn-main:hover {
+  box-shadow: 0 6px 24px rgba(249,115,22,0.6);
+  transform: translateY(-1px) scale(1.02);
+}
+
+.go-btn-main:disabled {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.3);
+  box-shadow: none;
+  cursor: wait;
+  transform: none;
+}
+
+/* ── ETA strip ── */
+.eta-strip-dark {
+  background: rgba(249,115,22,0.08);
+  border: 1px solid rgba(249,115,22,0.2);
+  border-radius: 12px;
+}
+
+/* ── Turn instruction card ── */
+.step-card {
+  border-radius: 14px;
+  padding: 14px 16px;
+  color: #fff;
+  font-family: 'DM Sans', sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+.step-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.06);
+  pointer-events: none;
+}
+
+/* ── Alert box ── */
+.alert-box-dark {
+  background: rgba(220,38,38,0.08);
+  border: 1px solid rgba(220,38,38,0.2);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+/* ── Delivery location strip (video style) ── */
+.delivery-strip {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(0deg, #0a0a0f 80%, transparent);
+  padding: 24px 20px 16px;
+  z-index: 900;
+  pointer-events: none;
+}
+
+.delivery-label {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 16px;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* ── Map dark overlay ── */
+.map-dark-overlay {
+  background: linear-gradient(135deg, #0d1117 0%, #1a2035 50%, #0d1117 100%) !important;
+}
+
+/* ── Risk pill (map floating) ── */
+.risk-pill-dark {
+  background: rgba(15, 15, 24, 0.95) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  backdrop-filter: blur(12px);
+  border-radius: 24px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+/* ── Toggle switch ── */
+.toggle-track {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  transition: left 0.2s;
+}
+
+/* ── Route polylines ── */
+.leaflet-overlay-pane svg path {
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+/* ── Scrollbar ── */
+.panel-scroll::-webkit-scrollbar { width: 4px; }
+.panel-scroll::-webkit-scrollbar-track { background: transparent; }
+.panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+.panel-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+
+/* ── Leaflet zoom ── */
+.leaflet-top.leaflet-right { top: 60px; right: 60px; }
+
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.leaflet-control-zoom a {
+  width: 34px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  font-size: 16px !important;
+  color: #e0e0f0 !important;
+  background: #1a1f2e !important;
+  border-color: rgba(255,255,255,0.08) !important;
+  font-family: 'DM Sans', sans-serif !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: #252b3d !important;
+  color: #f97316 !important;
+}
+
+/* ── LIVE badge ── */
+@keyframes liveblink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+  animation: liveblink 1.2s infinite;
+  display: inline-block;
+}
+
+/* ── Risk pulse ── */
+@keyframes riskPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.6; transform: scale(1.4); }
+}
+
+/* ── Step direction list ── */
+.dir-step-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  transition: background 0.15s;
+  align-items: flex-start;
+}
+
+.dir-step-row:hover { background: rgba(255,255,255,0.04); }
+.dir-step-row.active { background: rgba(249,115,22,0.08); }
+
+.dir-step-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  color: rgba(255,255,255,0.5);
+}
+
+.dir-step-icon.active {
+  background: #f97316;
+  color: #fff;
+  box-shadow: 0 0 12px rgba(249,115,22,0.5);
+}
+
+/* ── Feedback modal ── */
+.feedback-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.feedback-card {
+  background: #1a1f2e;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 28px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  animation: slideUp 0.25s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+/* ── Toast ── */
+@keyframes toastIn {
+  from { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+/* ── Hotspot circle glow ── */
+.leaflet-overlay-pane .leaflet-interactive {
+  filter: drop-shadow(0 0 8px rgba(220,38,38,0.3));
+}
+
+/* ── Sub-nav ── */
+.subnav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  background: #0a0a0f;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  font-family: 'DM Sans', sans-serif;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.subnav::-webkit-scrollbar { display: none; }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .nav-links { display: none; }
+  .nav-hamburger { display: flex; }
+  .nav-sos { padding: 6px 12px; font-size: 12px; }
+  .nav-logo-text { font-size: 16px; }
+}
+
+@media (max-width: 600px) {
+  .nav-root { padding: 0 14px; }
+  .nav-logo-badge { display: none; }
+  .nav-lang { display: none; }
+}
