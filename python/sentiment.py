@@ -183,4 +183,4 @@ if __name__ == "__main__":
         assert -1.0 <= r["polarity"] <= 1.0, f"polarity out of range: {r}"
         assert r["label"] in ("positive", "neutral", "negative"), f"bad label: {r}"
         print(f"[{r['label'].upper():8}] {r['score']:6.1f}  {r['polarity']:+.3f}  \"{s[:50]}\"")
-    print("\nAll assertions passed ✅")
+    print("\nAll assertions passed ")

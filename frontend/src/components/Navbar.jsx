@@ -1,354 +1,348 @@
 /**
- * Navbar.jsx — IntelliCrash v10.0 FINAL
- * ✅ Dark glassmorphism aesthetic (replaces white MUI AppBar)
- * ✅ Sign In (ghost) + Sign Up (orange gradient) top-right when logged out
- * ✅ User avatar + name + logout when logged in
- * ✅ Mobile drawer + bottom tab bar preserved
- * ✅ No MUI dependency — pure inline styles
- * ✅ Supabase auth state
+ * Navbar.jsx — IntelliCrash v9.0
+ * ✅ Live ticker REMOVED — Home.jsx owns it
+ * ✅ Severe banner REMOVED — Home.jsx owns it
+ * ✅ No getReports() call — navbar fetches nothing
+ * ✅ Pill navbar, auth dropdown, mobile drawer preserved
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { supabase } from "../services/supabase";
+import ThemeToggle from "./ThemeToggle";
 
-const LINKS = [
-  { label: "Home",      path: "/",           emoji: "🏠" },
-  { label: "Navigate",  path: "/navigation", emoji: "🗺️" },
-  { label: "Predict",   path: "/predict",    emoji: "⚡" },
-  { label: "Dashboard", path: "/dashboard",  emoji: "📊" },
-  { label: "XAI",       path: "/xai",        emoji: "🧠" },
-  { label: "Bulletin",  path: "/bulletin",   emoji: "📡" },
-  { label: "Trips",     path: "/trips",      emoji: "🚗" },
-  { label: "About",     path: "/about",      emoji: "ℹ️" },
+const NAV_LINKS = [
+  { label: "Home",     path: "/",           icon: "🏠", auth: false },
+  { label: "Navigate", path: "/navigation", icon: "🧭", auth: true  },
+  { label: "Rewards",  path: "/rewards",    icon: "🏆", auth: false },
+  { label: "Bulletin", path: "/bulletin",   icon: "📢", auth: false },
 ];
 
-const BOTTOM_TABS = [
-  { label: "Home",     path: "/",           emoji: "🏠" },
-  { label: "Navigate", path: "/navigation", emoji: "🗺️" },
-  { label: "Predict",  path: "/predict",    emoji: "⚡" },
-  { label: "SOS",      path: "/sos",        emoji: "🚨" },
-  { label: "More",     path: "/dashboard",  emoji: "☰"  },
-];
+function useAuth() {
+  const [user,    setUser]    = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let sub;
+    const init = async () => {
+      try {
+        const { supabase } = await import("../services/supabase");
+        const { data } = await supabase.auth.getSession();
+        setUser(data?.session?.user || null);
+        const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
+          setUser(session?.user || null);
+        });
+        sub = listener?.subscription;
+      } catch { setUser(null); }
+      setLoading(false);
+    };
+    init();
+    return () => sub?.unsubscribe();
+  }, []);
+
+  const signOut = async () => {
+    try {
+      const { supabase } = await import("../services/supabase");
+      await supabase.auth.signOut();
+    } catch {}
+  };
+
+  return { user, loading, signOut };
+}
+
+function UserMenu({ user, signOut }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const nav = useNavigate();
+
+  useEffect(() => {
+    const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  const initials = user?.email?.slice(0, 2).toUpperCase() || "U";
+  const username = (user?.email || "").split("@")[0];
+  const email    = user?.email || "";
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 7,
+          padding: "5px 12px 5px 5px",
+          border: `1.5px solid ${open ? "var(--accent)" : "var(--border)"}`,
+          borderRadius: 36, background: open ? "var(--bg-soft)" : "var(--bg-card)",
+          cursor: "pointer", transition: "all .18s",
+          fontFamily: "'Satoshi', sans-serif",
+          boxShadow: open ? "0 0 0 3px rgba(255,77,0,0.1)" : "none",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(255,77,0,0.08)"; }}
+        onMouseLeave={e => { if (!open) { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; } }}
+      >
+        <div style={{
+          width: 28, height: 28, borderRadius: "50%",
+          background: "linear-gradient(135deg,#ff4d00,#ff8c42)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 11, fontWeight: 800, color: "#fff", flexShrink: 0,
+        }}>{initials}</div>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", maxWidth: 88, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{username}</span>
+        <span style={{ fontSize: 10, color: "#9898a8", display: "inline-block", transition: "transform .18s", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", right: 0, top: "calc(100% + 10px)",
+          width: 220, background: "var(--bg-card)",
+          border: "1px solid var(--border)", borderRadius: 16,
+          boxShadow: "0 12px 40px rgba(10,10,15,.12)",
+          overflow: "hidden", zIndex: 300,
+          animation: "icMenuPop 0.18s cubic-bezier(.22,.68,0,1.2) both",
+        }}>
+          <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg-soft)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{username}</div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>{email}</div>
+          </div>
+          {[
+            { icon: "🧭", label: "Navigate",   path: "/navigation" },
+            { icon: "🏆", label: "My Rewards", path: "/rewards"    },
+          ].map(({ icon, label, path }) => (
+            <button key={label} onClick={() => { nav(path); setOpen(false); }}
+              style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 13, color: "var(--text-primary)", fontFamily: "'Satoshi', sans-serif", textAlign: "left", transition: "background .15s" }}
+              onMouseEnter={e => e.currentTarget.style.background = "var(--bg-soft)"}
+              onMouseLeave={e => e.currentTarget.style.background = "none"}
+            >
+              <span style={{ fontSize: 15 }}>{icon}</span> {label}
+            </button>
+          ))}
+          <div style={{ height: 1, background: "#f0f0f8", margin: "4px 0" }} />
+          <button onClick={() => { signOut(); setOpen(false); }}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 16px", border: "none", background: "none", cursor: "pointer", fontSize: 13, color: "#ef4444", fontFamily: "'Satoshi', sans-serif", textAlign: "left", transition: "background .15s" }}
+            onMouseEnter={e => e.currentTarget.style.background = "#fef2f2"}
+            onMouseLeave={e => e.currentTarget.style.background = "none"}
+          >
+            🚪 Sign Out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Navbar() {
   const nav      = useNavigate();
   const location = useLocation();
-  const [user,       setUser]       = useState(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [isMobile,   setIsMobile]   = useState(window.innerWidth < 900);
+  const { user, loading, signOut } = useAuth();
+  const [scrolled,   setScrolled]   = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 900);
-    window.addEventListener("resize", handler);
-    return () => window.removeEventListener("resize", handler);
+    const fn = () => setScrolled(window.scrollY > 8);
+    window.addEventListener("scroll", fn);
+    return () => window.removeEventListener("scroll", fn);
   }, []);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setUser(data?.session?.user || null));
-    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
-      setUser(session?.user || null);
-    });
-    return () => listener?.subscription?.unsubscribe();
-  }, []);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    nav("/");
+  const handleNavClick = (link) => {
+    if (link.auth && !user) { nav("/login"); return; }
+    nav(link.path);
+    setMobileOpen(false);
   };
 
-  const isActive = (p) =>
-    p === "/" ? location.pathname === "/" : location.pathname.startsWith(p);
-
-  const displayName =
-    user?.user_metadata?.full_name?.split(" ")[0] ||
-    user?.user_metadata?.name?.split(" ")[0] ||
-    user?.email?.split("@")[0] || "User";
-  const initials = displayName.slice(0, 2).toUpperCase();
-
-  const S = {
-    nav: {
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      height: 58, padding: "0 20px",
-      background: "rgba(8,8,14,0.94)",
-      backdropFilter: "blur(20px) saturate(1.8)",
-      WebkitBackdropFilter: "blur(20px) saturate(1.8)",
-      borderBottom: "1px solid rgba(255,255,255,0.06)",
-      position: "sticky", top: 0, zIndex: 2000,
-      fontFamily: "'DM Sans',sans-serif",
-      boxShadow: "0 4px 32px rgba(0,0,0,0.5)",
-    },
-    logoWrap: {
-      display: "flex", alignItems: "center", gap: 10,
-      cursor: "pointer", flexShrink: 0,
-    },
-    logoIcon: {
-      width: 34, height: 34, flexShrink: 0,
-      background: "linear-gradient(135deg,#f97316,#ef4444)",
-      borderRadius: 10, display: "flex", alignItems: "center",
-      justifyContent: "center", fontSize: 17,
-      boxShadow: "0 4px 14px rgba(249,115,22,0.45)",
-    },
-    logoText: {
-      fontFamily: "'Syne',sans-serif", fontWeight: 800,
-      fontSize: 19, color: "#fff", letterSpacing: "-0.5px",
-    },
-    badge: {
-      fontSize: 9, fontWeight: 700,
-      background: "rgba(249,115,22,0.12)", color: "#f97316",
-      border: "1px solid rgba(249,115,22,0.25)",
-      borderRadius: 6, padding: "2px 7px",
-      letterSpacing: "0.8px", textTransform: "uppercase",
-    },
-    navLinks: { display: "flex", alignItems: "center", gap: 2 },
-    right: { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 },
-    langBtn: {
-      padding: "6px 12px", borderRadius: 22, fontSize: 12, fontWeight: 600,
-      color: "rgba(255,255,255,0.5)", background: "rgba(255,255,255,0.05)",
-      border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer",
-      fontFamily: "'DM Sans',sans-serif",
-    },
-    signInBtn: {
-      display: "flex", alignItems: "center", gap: 7,
-      padding: "6px 14px 6px 10px", borderRadius: 22, fontSize: 13, fontWeight: 600,
-      color: "rgba(255,255,255,0.8)", background: "rgba(255,255,255,0.07)",
-      border: "1px solid rgba(255,255,255,0.12)", cursor: "pointer",
-      fontFamily: "'DM Sans',sans-serif",
-    },
-    signUpBtn: {
-      display: "flex", alignItems: "center", gap: 6,
-      padding: "6px 16px", borderRadius: 22, fontSize: 13, fontWeight: 700,
-      color: "#fff", background: "linear-gradient(135deg,#f97316,#ef4444)",
-      border: "none", cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
-      boxShadow: "0 3px 14px rgba(249,115,22,0.4)",
-    },
-    userBtn: {
-      display: "flex", alignItems: "center", gap: 8,
-      padding: "5px 12px 5px 6px", borderRadius: 22, fontSize: 13, fontWeight: 600,
-      color: "rgba(255,255,255,0.85)", background: "rgba(255,255,255,0.07)",
-      border: "1px solid rgba(255,255,255,0.12)", cursor: "pointer",
-      fontFamily: "'DM Sans',sans-serif",
-    },
-    avatar: {
-      width: 24, height: 24, borderRadius: "50%",
-      background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 10, fontWeight: 800, color: "#fff", flexShrink: 0,
-    },
-    sosBtn: {
-      display: "flex", alignItems: "center", gap: 5,
-      padding: "6px 14px", borderRadius: 22, fontSize: 13, fontWeight: 700,
-      color: "#fff", background: "linear-gradient(135deg,#ef4444,#dc2626)",
-      border: "none", cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
-      boxShadow: "0 2px 12px rgba(239,68,68,0.4)", whiteSpace: "nowrap",
-    },
-    hamburger: {
-      background: "none", border: "none", cursor: "pointer",
-      padding: 6, borderRadius: 8, color: "rgba(255,255,255,0.6)",
-      display: "flex",
-    },
-  };
-
-  const navLinkStyle = (active) => ({
-    display: "flex", alignItems: "center", gap: 5,
-    padding: "6px 12px", borderRadius: 22, fontSize: 12,
-    fontWeight: active ? 700 : 500,
-    color: active ? "#f97316" : "rgba(255,255,255,0.5)",
-    background: active ? "rgba(249,115,22,0.12)" : "transparent",
-    border: active ? "1px solid rgba(249,115,22,0.2)" : "1px solid transparent",
-    cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
-    whiteSpace: "nowrap",
-  });
+  const isActive = (path) => location.pathname === path;
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
-        @keyframes drawerIn { from { transform:translateX(-100%); opacity:0 } to { transform:translateX(0); opacity:1 } }
-        .nb-link:hover { background:rgba(255,255,255,0.07) !important; color:rgba(255,255,255,0.9) !important; }
-        .nb-signin:hover { background:rgba(255,255,255,0.11) !important; color:#fff !important; transform:translateY(-1px); }
-        .nb-signup:hover { box-shadow:0 5px 22px rgba(249,115,22,0.55) !important; transform:translateY(-1px) scale(1.02); }
-        .nb-user:hover { background:rgba(255,255,255,0.1) !important; }
-        .nb-sos:hover { box-shadow:0 5px 22px rgba(239,68,68,0.6) !important; transform:scale(1.03) translateY(-1px); }
+        @import url('https://fonts.googleapis.com/css2?family=Clash+Display:wght@700&family=Satoshi:wght@400;500;600;700;800&display=swap');
+        @keyframes icMenuPop { from{opacity:0;transform:translateY(-8px) scale(.97)} to{opacity:1;transform:none} }
+        @keyframes icNavIn   { from{opacity:0;transform:translateY(-14px)} to{opacity:1;transform:none} }
+
+        .ic7-nav-link {
+          display:inline-flex; align-items:center; gap:6px;
+          padding:8px 16px; border-radius:30px; border:none;
+          background:transparent; font-size:13.5px; font-weight:600;
+          cursor:pointer; font-family:'Satoshi',sans-serif;
+          transition:all .18s; color:var(--text-secondary); white-space:nowrap; position:relative;
+        }
+        .ic7-nav-link:hover { background:var(--bg-soft); color:var(--accent); }
+        .ic7-nav-link.active { background:linear-gradient(135deg,#ff4d00,#ff8c42); color:#fff; box-shadow:0 4px 14px rgba(255,77,0,.28); }
+        .ic7-nav-link.active:hover { background:linear-gradient(135deg,#ea4300,#f07030); }
+        .ic7-nav-link.locked { opacity:.65; }
+        .ic7-nav-link.locked::after { content:'🔒'; font-size:8px; position:absolute; top:2px; right:2px; }
+
+        .ic7-signin-btn {
+          padding:8px 18px; border-radius:36px; border:1.5px solid var(--border); background:var(--bg-card);
+          font-size:13px; font-weight:700; color:var(--text-primary); cursor:pointer;
+          font-family:'Satoshi',sans-serif; transition:all .18s; white-space:nowrap;
+        }
+        .ic7-signin-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--bg-soft); transform:translateY(-1px); }
+
+        .ic7-signup-btn {
+          padding:8px 20px; border-radius:36px; border:none;
+          background:linear-gradient(135deg,#ff4d00,#ff8c42); color:#fff;
+          font-size:13px; font-weight:800; cursor:pointer; font-family:'Satoshi',sans-serif;
+          box-shadow:0 4px 14px rgba(255,77,0,.28); transition:all .18s; white-space:nowrap;
+        }
+        .ic7-signup-btn:hover { transform:translateY(-2px); box-shadow:0 8px 22px rgba(255,77,0,.44); }
+
+        @media(max-width:960px) {
+          .ic7-desktop { display:none !important; }
+          .ic7-mobile-btn { display:flex !important; }
+        }
+        @media(min-width:961px) {
+          .ic7-mobile-btn    { display:none !important; }
+          .ic7-mobile-drawer { display:none !important; }
+        }
       `}</style>
 
-      {/* ══ TOP NAVBAR ══ */}
-      <nav style={S.nav}>
-        {/* Orange gradient top line */}
+      <div style={{ position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{
-          position:"absolute", top:0, left:0, right:0, height:1, pointerEvents:"none",
-          background:"linear-gradient(90deg,transparent,rgba(249,115,22,0.7),rgba(239,68,68,0.7),transparent)",
-        }}/>
-
-        {/* Logo */}
-        <div style={S.logoWrap} onClick={() => nav("/")}>
-          <div style={S.logoIcon}>🛡️</div>
-          <span style={S.logoText}>
-            Intelli<span style={{ color:"#f97316" }}>Crash</span>
-          </span>
-          {!isMobile && <span style={S.badge}>HP · iRAD</span>}
-        </div>
-
-        {/* Desktop links */}
-        {!isMobile && (
-          <div style={S.navLinks}>
-            {LINKS.map(l => (
-              <button key={l.path} className="nb-link" onClick={() => nav(l.path)} style={navLinkStyle(isActive(l.path))}>
-                <span style={{ fontSize:13 }}>{l.emoji}</span>
-                {l.label}
+          background: "var(--bg-primary)",
+          borderBottom: "1px solid var(--border)",
+          backdropFilter: scrolled ? "blur(20px)" : "none",
+          boxShadow: scrolled ? "0 2px 20px rgba(10,10,15,.06)" : "none",
+          transition: "all .25s ease",
+          padding: "10px 24px",
+        }}>
+          <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              background: "var(--bg-card)", borderRadius: 60, padding: "6px 8px 6px 16px",
+              boxShadow: scrolled ? "0 4px 28px rgba(10,10,15,.09)" : "0 2px 18px rgba(10,10,15,.06)",
+              border: "1px solid var(--border)",
+              transition: "box-shadow .25s ease",
+              animation: "icNavIn 0.4s cubic-bezier(.22,.68,0,1.2) both",
+              gap: 8,
+            }}>
+              {/* Logo */}
+              <button onClick={() => nav("/")}
+                style={{ display: "flex", alignItems: "center", gap: 10, border: "none", background: "none", cursor: "pointer", padding: "0 4px", flexShrink: 0 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#ff4d00,#ff8c42)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, boxShadow: "0 4px 12px rgba(255,77,0,.22)", flexShrink: 0 }}>🛡️</div>
+                <div>
+                  <div style={{ fontFamily: "'Clash Display',sans-serif", fontWeight: 700, fontSize: 17, color: "var(--text-primary)", lineHeight: 1 }}>
+                    Intelli<span style={{ color: "var(--accent)" }}>Crash</span>
+                  </div>
+                  <div style={{ fontSize: 8.5, color: "var(--accent)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>iRAD 2025-26</div>
+                </div>
               </button>
-            ))}
+
+              {/* Desktop nav */}
+              <div className="ic7-desktop" style={{ display: "flex", alignItems: "center", gap: 2, flex: 1, justifyContent: "center" }}>
+                {NAV_LINKS.map(link => {
+                  const locked = link.auth && !user;
+                  return (
+                    <button key={link.path}
+                      onClick={() => handleNavClick(link)}
+                      className={`ic7-nav-link${isActive(link.path) ? " active" : ""}${locked ? " locked" : ""}`}
+                      title={locked ? "Sign in required" : link.label}
+                    >
+                      <span>{link.icon}</span>{link.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right: SOS + auth */}
+              <div className="ic7-desktop" style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                <button 
+                  onClick={() => window.dispatchEvent(new Event("trigger_intellicrash_sos"))}
+                  style={{
+                    background: "#ef4444",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "30px",
+                    padding: "8px 16px",
+                    fontSize: "12px",
+                    fontWeight: "900",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 4px 12px rgba(239, 68, 68, 0.3)",
+                    transition: "transform 0.1s"
+                  }}
+                  onMouseDown={e => e.currentTarget.style.transform = "scale(0.95)"}
+                  onMouseUp={e => e.currentTarget.style.transform = "scale(1)"}
+                >
+                  <span style={{ fontSize: 16 }}>🆘</span> QUICK SOS
+                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <ThemeToggle />
+                  {!loading && (
+                    user
+                      ? <UserMenu user={user} signOut={signOut} />
+                      : <button className="ic7-signin-btn" onClick={() => nav("/login")}>Sign In</button>
+                  )}
+                </div>
+              </div>
+
+              {/* Mobile hamburger */}
+              <div className="ic7-mobile-btn" style={{ display: "none", alignItems: "center", flexShrink: 0 }}>
+                <button onClick={() => setMobileOpen(o => !o)}
+                  style={{ display: "flex", flexDirection: "column", gap: 4, border: "1.5px solid var(--border)", borderRadius: 10, background: "var(--bg-card)", padding: "8px 10px", cursor: "pointer" }}>
+                  <div style={{ width: 18, height: 2, background: "var(--text-primary)", borderRadius: 2, transition: "all .2s", transform: mobileOpen ? "rotate(45deg) translate(4px,4px)" : "" }} />
+                  <div style={{ width: 18, height: 2, background: "var(--text-primary)", borderRadius: 2, opacity: mobileOpen ? 0 : 1, transition: "all .2s" }} />
+                  <div style={{ width: 18, height: 2, background: "var(--text-primary)", borderRadius: 2, transition: "all .2s", transform: mobileOpen ? "rotate(-45deg) translate(4px,-4px)" : "" }} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div className="ic7-mobile-drawer"
+          style={{ position: "fixed", inset: 0, background: "rgba(10,10,15,.4)", zIndex: 90, backdropFilter: "blur(4px)" }}
+          onClick={() => setMobileOpen(false)} />
+      )}
+
+      {/* Mobile drawer */}
+      <div className="ic7-mobile-drawer" style={{
+        position: "fixed", top: 64, left: 0, right: 0,
+        background: "var(--bg-card)", zIndex: 95,
+        borderBottom: "1px solid var(--border)",
+        boxShadow: "0 8px 32px rgba(10,10,15,.1)",
+        transform: mobileOpen ? "translateY(0)" : "translateY(-110%)",
+        transition: "transform .25s cubic-bezier(.4,0,.2,1)",
+        padding: "16px 20px 20px",
+        display: "flex", flexDirection: "column", gap: 6,
+      }}>
+        {NAV_LINKS.map(link => {
+          const locked = link.auth && !user;
+          return (
+            <button key={link.path} onClick={() => handleNavClick(link)}
+              style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "11px 16px", borderRadius: 12, border: "none",
+                background: isActive(link.path) ? "linear-gradient(135deg,#ff4d00,#ff8c42)" : "var(--bg-soft)",
+                color: isActive(link.path) ? "#fff" : "var(--text-primary)",
+                fontSize: 15, fontWeight: 600, cursor: "pointer",
+                fontFamily: "'Satoshi',sans-serif", textAlign: "left",
+                opacity: locked ? 0.7 : 1, transition: "all .15s",
+              }}>
+              <span style={{ fontSize: 18 }}>{link.icon}</span>
+              {link.label}
+              {locked && <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-secondary)" }}>🔒 Sign in</span>}
+            </button>
+          );
+        })}
+        <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
+        {user ? (
+          <div>
+            <div style={{ fontSize: 12, color: "#9898a8", marginBottom: 10, fontFamily: "'Satoshi',sans-serif" }}>
+              Signed in as <strong>{user.email}</strong>
+            </div>
+            <button onClick={() => { signOut(); setMobileOpen(false); }}
+              style={{ padding: "10px 20px", borderRadius: 36, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#ef4444", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'Satoshi',sans-serif" }}>
+              🚪 Sign Out
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="ic7-signin-btn" style={{ flex: 1 }} onClick={() => { nav("/login"); setMobileOpen(false); }}>Sign In</button>
           </div>
         )}
-
-        {/* Right */}
-        <div style={S.right}>
-          {!isMobile && <button style={S.langBtn}>🌐 EN</button>}
-
-          {user ? (
-            <button className="nb-user" onClick={handleLogout} title="Sign out" style={S.userBtn}>
-              <div style={S.avatar}>{initials}</div>
-              {!isMobile && <span>{displayName}</span>}
-              <span style={{ fontSize:10, opacity:0.4 }}>↩</span>
-            </button>
-          ) : (
-            <>
-              {!isMobile && (
-                <button className="nb-signin" onClick={() => nav("/login")} style={S.signInBtn}>
-                  <span style={{ fontSize:14 }}>👤</span>
-                  Sign In
-                </button>
-              )}
-              <button className="nb-signup" onClick={() => nav("/login?tab=signup")} style={S.signUpBtn}>
-                ✨ <span>{isMobile ? "" : "Sign Up"}</span>
-              </button>
-            </>
-          )}
-
-          <button className="nb-sos" onClick={() => nav("/sos")} style={S.sosBtn}>
-            🚨 SOS
-          </button>
-
-          {isMobile && (
-            <button style={S.hamburger} onClick={() => setDrawerOpen(true)}>
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="22" height="22">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16"/>
-              </svg>
-            </button>
-          )}
-        </div>
-      </nav>
-
-      {/* ══ MOBILE DRAWER ══ */}
-      {drawerOpen && (
-        <div
-          onClick={() => setDrawerOpen(false)}
-          style={{
-            position:"fixed", inset:0, top:58, zIndex:1900,
-            background:"rgba(0,0,0,0.65)", backdropFilter:"blur(6px)",
-          }}
-        >
-          <div onClick={e => e.stopPropagation()} style={{
-            position:"absolute", top:0, left:0, width:280, height:"100%",
-            background:"#0f0f18", borderRight:"1px solid rgba(255,255,255,0.07)",
-            padding:"16px 12px", boxShadow:"4px 0 40px rgba(0,0,0,0.6)",
-            overflowY:"auto", display:"flex", flexDirection:"column", gap:4,
-            animation:"drawerIn 0.22s ease",
-          }}>
-            {LINKS.map(l => (
-              <button key={l.path} onClick={() => { nav(l.path); setDrawerOpen(false); }} style={{
-                display:"flex", alignItems:"center", gap:12,
-                padding:"11px 14px", borderRadius:10, fontSize:14,
-                fontWeight: isActive(l.path) ? 700 : 500,
-                color: isActive(l.path) ? "#f97316" : "rgba(255,255,255,0.65)",
-                background: isActive(l.path) ? "rgba(249,115,22,0.12)" : "transparent",
-                border:"none", cursor:"pointer", fontFamily:"'DM Sans',sans-serif",
-                textAlign:"left", width:"100%",
-              }}>
-                <span style={{ fontSize:18, width:26, textAlign:"center" }}>{l.emoji}</span>
-                {l.label}
-              </button>
-            ))}
-
-            {/* Drawer auth */}
-            <div style={{ marginTop:8, paddingTop:12, borderTop:"1px solid rgba(255,255,255,0.06)", display:"flex", flexDirection:"column", gap:8 }}>
-              {user ? (
-                <button onClick={() => { handleLogout(); setDrawerOpen(false); }} style={{
-                  width:"100%", padding:"10px 14px", borderRadius:10,
-                  background:"rgba(255,255,255,0.05)", color:"rgba(255,255,255,0.75)",
-                  border:"1px solid rgba(255,255,255,0.1)", cursor:"pointer",
-                  fontSize:13, fontWeight:600, fontFamily:"'DM Sans',sans-serif",
-                  display:"flex", alignItems:"center", gap:8,
-                }}>
-                  <div style={{ width:22, height:22, borderRadius:"50%", background:"linear-gradient(135deg,#6366f1,#8b5cf6)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:800, color:"#fff" }}>{initials}</div>
-                  {displayName} · Sign Out
-                </button>
-              ) : (
-                <>
-                  <button onClick={() => { nav("/login"); setDrawerOpen(false); }} style={{
-                    width:"100%", padding:"10px 14px", borderRadius:10,
-                    background:"rgba(255,255,255,0.05)", color:"rgba(255,255,255,0.75)",
-                    border:"1px solid rgba(255,255,255,0.1)", cursor:"pointer",
-                    fontSize:13, fontWeight:600, fontFamily:"'DM Sans',sans-serif",
-                  }}>Sign In</button>
-                  <button onClick={() => { nav("/login?tab=signup"); setDrawerOpen(false); }} style={{
-                    width:"100%", padding:"10px 14px", borderRadius:10,
-                    background:"linear-gradient(135deg,#f97316,#ef4444)", color:"#fff",
-                    border:"none", cursor:"pointer",
-                    fontSize:13, fontWeight:700, fontFamily:"'DM Sans',sans-serif",
-                    boxShadow:"0 3px 14px rgba(249,115,22,0.3)",
-                  }}>✨ Sign Up — It's Free</button>
-                </>
-              )}
-            </div>
-
-            <button onClick={() => { nav("/sos"); setDrawerOpen(false); }} style={{
-              marginTop:"auto", padding:12, background:"rgba(239,68,68,0.1)",
-              color:"#ef4444", border:"1px solid rgba(239,68,68,0.25)",
-              borderRadius:10, fontSize:14, fontWeight:800,
-              cursor:"pointer", fontFamily:"'DM Sans',sans-serif", width:"100%",
-            }}>🚨 SOS Emergency — 112</button>
-          </div>
-        </div>
-      )}
-
-      {/* ══ MOBILE BOTTOM TAB BAR ══ */}
-      {isMobile && (
-        <div style={{
-          position:"fixed", bottom:0, left:0, right:0, zIndex:1400,
-          height:60, display:"flex",
-          background:"rgba(10,10,18,0.97)", borderTop:"1px solid rgba(255,255,255,0.07)",
-          backdropFilter:"blur(16px)",
-        }}>
-          {BOTTOM_TABS.map(t => {
-            const act  = isActive(t.path);
-            const isSOS = t.label === "SOS";
-            return (
-              <div key={t.path} onClick={() => nav(t.path)} style={{
-                flex:1, display:"flex", flexDirection:"column",
-                alignItems:"center", justifyContent:"center",
-                cursor:"pointer", gap:2,
-              }}>
-                <div style={{
-                  width: isSOS ? 38 : "auto", height: isSOS ? 38 : "auto",
-                  borderRadius: isSOS ? "50%" : 0,
-                  background: isSOS ? "linear-gradient(135deg,#ef4444,#dc2626)" : "transparent",
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  boxShadow: isSOS ? "0 2px 12px rgba(239,68,68,0.5)" : "none",
-                  marginBottom: isSOS ? 2 : 0,
-                }}>
-                  <span style={{ fontSize: isSOS ? 16 : 20 }}>{t.emoji}</span>
-                </div>
-                <span style={{
-                  fontSize:9, fontFamily:"'DM Sans',sans-serif",
-                  fontWeight: act ? 700 : 400,
-                  color: isSOS ? "#f87171" : act ? "#f97316" : "rgba(255,255,255,0.4)",
-                }}>{t.label}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      </div>
     </>
   );
 }

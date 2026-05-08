@@ -8,7 +8,7 @@ import {
   TrendingUp, Warning, Shield, Speed, EmojiEvents,
   Refresh, Info,
 } from "@mui/icons-material";
-import { getStats, getSessions, initGM } from "../services/api";
+import { getStats, getSessions, initGM, getHotspotsML, getHotspotsDynamic } from "../services/api";
 
 // ─── Risk helpers ─────────────────────────────────────────────────────────────
 const RC  = (s) => s >= 67 ? "#ea4335" : s >= 34 ? "#f9ab00" : "#34a853";
@@ -154,12 +154,13 @@ function SectionHeader({ emoji, title, sub, chip }) {
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const nav = useNavigate();
-  const [metrics,    setMetrics]    = useState({});
-  const [features,   setFeatures]   = useState({});
-  const [sessions,   setSessions]   = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [refresh,    setRefresh]    = useState(0);
-  const [hotspotTab, setHotspotTab] = useState("all");
+  const [metrics,      setMetrics]      = useState({});
+  const [features,     setFeatures]     = useState({});
+  const [sessions,     setSessions]     = useState([]);
+  const [hotspots,     setHotspots]     = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [refresh,      setRefresh]      = useState(0);
+  const [hotspotTab,   setHotspotTab]   = useState("all");
 
   const gm = initGM();
 
@@ -172,6 +173,22 @@ export default function Dashboard() {
         setFeatures(d.feature_importances || {});
       }),
       getSessions().then(d => setSessions(Array.isArray(d) ? d : (d.sessions || []))),
+      // Fetch real hotspots from backend
+      getHotspotsML().then(d => {
+        if (d?.hotspots?.length) {
+          setHotspots(d.hotspots);
+        } else {
+          // Fallback to dynamic hotspots
+          return getHotspotsDynamic().then(d2 => {
+            setHotspots(d2?.hotspots || []);
+          });
+        }
+      }).catch(() => {
+        // Fallback if ML fails
+        getHotspotsDynamic().then(d => {
+          setHotspots(d?.hotspots || []);
+        }).catch(() => {});
+      }),
     ]).finally(() => setLoading(false));
   }, [refresh]);
 
@@ -184,9 +201,13 @@ export default function Dashboard() {
   const bestScore   = driverScores.length ? Math.max(...driverScores) : 0;
   const latestScore = driverScores.length ? driverScores[driverScores.length - 1] : 0;
 
+  // Use real hotspots from API, filtered by district if needed
   const filteredHotspots = hotspotTab === "all"
-    ? TOP_HOTSPOTS
-    : TOP_HOTSPOTS.filter(h => h.district.toLowerCase() === hotspotTab.toLowerCase());
+    ? hotspots
+    : hotspots.filter(h => {
+        const dist = h.district?.toLowerCase() || "";
+        return dist === hotspotTab.toLowerCase();
+      });
 
   const accuracy = parseFloat(metrics["Accuracy"] || 0.94);
 

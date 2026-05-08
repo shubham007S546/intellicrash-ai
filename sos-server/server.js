@@ -1,230 +1,530 @@
 // ================================================================
-// IntelliCrash SOS — Backend (Node.js + Express) — v2 Debugged
-// Fixes:
-//   1. Twilio 500 → graceful fallback when credentials missing/invalid
-//   2. Email errors no longer crash server — returns 200 with ok:false
-//   3. Added /api/health with env check
-//   4. Added /api/nearby proxy to Python backend
-//   5. All routes return consistent JSON — no more unhandled rejections
-//
-// npm install express twilio nodemailer cors dotenv
-// node server.js
+// server.js — SafeSignal SOS  v7  REAL GPS
+// ✅ FIXED: No more hardcoded lat:31.1048 lon:77.1734 fallback
+//           Server now REJECTS /api/sos with missing/default coords
+//           All coord defaults removed — client MUST send real GPS
 // ================================================================
+"use strict";
 require("dotenv").config();
-const express    = require("express");
-const cors       = require("cors");
-const path       = require("path");
+
+const express = require("express");
+const cors    = require("cors");
+const path    = require("path");
+const https   = require("https");
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, "build")));
 
-// ── Twilio client — only initialise if credentials exist ──────────
-let twilioClient = null;
-const TWILIO_SID   = process.env.TWILIO_ACCOUNT_SID  || "";
-const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN    || "";
-const TWILIO_FROM  = process.env.TWILIO_FROM_NUMBER   || "";
+// ── ENV ───────────────────────────────────────────────────────────
+const {
+  TWILIO_SID,
+  TWILIO_TOKEN,
+  TWILIO_FROM,
 
-if (TWILIO_SID && TWILIO_TOKEN && TWILIO_SID.startsWith("AC")) {
-  try {
-    const twilio = require("twilio");
-    twilioClient = twilio(TWILIO_SID, TWILIO_TOKEN);
-    console.log("[Twilio] Client initialised OK");
-  } catch (err) {
-    console.warn("[Twilio] Init failed:", err.message);
-  }
-} else {
-  console.warn("[Twilio] Credentials missing or invalid — SMS will be skipped");
+  INFOBIP_API_KEY,
+  INFOBIP_BASE_URL,
+  INFOBIP_FROM_NUMBER,
+
+  GMAIL_USER,
+  GMAIL_PASS,
+
+  ADMIN_PHONE,
+  ADMIN_EMAIL,
+  ADMIN_WHATSAPP,
+
+  PORT = 3001,
+} = process.env;
+
+// ── Boot status ───────────────────────────────────────────────────
+function bootCheck() {
+  console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("  SafeSignal SOS v7 — Channel Status");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log(`  Twilio SMS   : ${TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM
+    ? "✅ READY  from=" + TWILIO_FROM
+    : "❌ MISSING — check TWILIO_SID / TWILIO_TOKEN / TWILIO_FROM"}`);
+  console.log(`  Infobip WA   : ${INFOBIP_API_KEY && INFOBIP_BASE_URL
+    ? "✅ READY  base=" + INFOBIP_BASE_URL
+    : "❌ MISSING — check INFOBIP_API_KEY / INFOBIP_BASE_URL"}`);
+  console.log(`  Gmail        : ${GMAIL_USER && GMAIL_PASS
+    ? "✅ READY  user=" + GMAIL_USER
+    : "❌ MISSING — check GMAIL_USER / GMAIL_PASS"}`);
+  console.log(`  Admin Phone  : ${ADMIN_PHONE    || "⚠️  NOT SET"}`);
+  console.log(`  Admin WA     : ${ADMIN_WHATSAPP || "⚠️  NOT SET"}`);
+  console.log(`  Admin Email  : ${ADMIN_EMAIL    || "⚠️  NOT SET"}`);
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 }
 
-// ── Nodemailer — only initialise if credentials exist ─────────────
-let mailer = null;
-const GMAIL_USER = process.env.GMAIL_USER || "";
-const GMAIL_PASS = process.env.GMAIL_PASS || "";
-
-if (GMAIL_USER && GMAIL_PASS && GMAIL_USER.includes("@")) {
-  try {
-    const nodemailer = require("nodemailer");
-    mailer = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: GMAIL_USER, pass: GMAIL_PASS },
-    });
-    console.log("[Mailer] Gmail transport initialised OK");
-  } catch (err) {
-    console.warn("[Mailer] Init failed:", err.message);
-  }
-} else {
-  console.warn("[Mailer] Gmail credentials missing — email will be skipped");
+// ── Number helpers ────────────────────────────────────────────────
+function toDigits(num) {
+  if (!num) return null;
+  return String(num).replace(/\D/g, "") || null;
+}
+function toE164(num) {
+  const d = toDigits(num);
+  return d ? "+" + d : null;
 }
 
-// ── POST /api/send-sms  { to, message } ──────────────────────────
-app.post("/api/send-sms", async (req, res) => {
-  const { to, message } = req.body;
+// ── Circular in-memory log ────────────────────────────────────────
+const sosLog = [];
+function appendLog(entry) {
+  if (sosLog.length >= 200) sosLog.shift();
+  sosLog.push({ ts: Date.now(), ...entry });
+}
 
-  if (!to || !message) {
-    return res.status(400).json({ error: "to and message required" });
+// ── Haversine distance (km) ───────────────────────────────────────
+function haversine(la1, lo1, la2, lo2) {
+  const R = 6371, dL = (la2-la1)*Math.PI/180, dO = (lo2-lo1)*Math.PI/180;
+  const a = Math.sin(dL/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dO/2)**2;
+  return +(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))).toFixed(1);
+}
+
+// ── Validate that coords look real (not zero, not old Shimla default) ──
+//    Returns an error string, or null if OK.
+function validateCoords(lat, lon) {
+  const la = parseFloat(lat);
+  const lo = parseFloat(lon);
+
+  if (isNaN(la) || isNaN(lo))       return "lat/lon are required and must be numbers";
+  if (la === 0   && lo === 0)        return "lat/lon are (0,0) — GPS not acquired";
+
+  // Himachal Pradesh bounding box (generous)
+  // lat 30.2–33.2, lon 75.5–79.0
+  if (la < 30.2 || la > 33.2)       return `lat ${la} is outside Himachal Pradesh`;
+  if (lo < 75.5 || lo > 79.0)       return `lon ${lo} is outside Himachal Pradesh`;
+
+  return null; // valid
+}
+
+// ── HP Hospital DB ────────────────────────────────────────────────
+const HOSPITALS = [
+  { name:"IGMC Shimla",           type:"hospital", phone:"0177-2804251", lat:31.1048, lon:77.1734 },
+  { name:"DDU Hospital Shimla",   type:"hospital", phone:"0177-2656190", lat:31.1100, lon:77.1650 },
+  { name:"Kamla Nehru Hospital",  type:"hospital", phone:"0177-2620210", lat:31.0990, lon:77.1800 },
+  { name:"Civil Hospital Solan",  type:"hospital", phone:"01792-223001", lat:30.9045, lon:77.0967 },
+  { name:"RH Sundernagar",        type:"hospital", phone:"01907-265060", lat:31.5337, lon:76.8833 },
+  { name:"Zonal Hosp Mandi",      type:"hospital", phone:"01905-235252", lat:31.7080, lon:76.9318 },
+  { name:"Civil Hosp Kullu",      type:"hospital", phone:"01902-222340", lat:32.0985, lon:77.1090 },
+  { name:"RH Dharamshala",        type:"hospital", phone:"01892-224498", lat:32.2188, lon:76.3225 },
+  { name:"Civil Hosp Bilaspur",   type:"hospital", phone:"01978-222264", lat:31.3423, lon:76.7570 },
+  { name:"Civil Hosp Hamirpur",   type:"hospital", phone:"01972-222029", lat:31.6862, lon:76.5214 },
+  { name:"Civil Hosp Una",        type:"hospital", phone:"01975-226100", lat:31.4660, lon:76.2699 },
+  { name:"HP Police (112)",       type:"police",   phone:"112",          lat:31.1048, lon:77.1734 },
+  { name:"HP Ambulance (108)",    type:"ambulance",phone:"108",          lat:31.1048, lon:77.1734 },
+  { name:"Fire Brigade (101)",    type:"fire",     phone:"101",          lat:31.1048, lon:77.1734 },
+  { name:"Disaster Relief",       type:"rescue",   phone:"1070",         lat:31.1048, lon:77.1734 },
+];
+
+function nearestHospitals(lat, lon, limit = 6) {
+  return HOSPITALS
+    .map(h => ({ ...h, dist: haversine(lat, lon, h.lat, h.lon) }))
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, limit);
+}
+
+// ── Background fire-and-forget ────────────────────────────────────
+function bg(label, fn) {
+  setImmediate(() =>
+    fn().catch(e => console.error(`[BG ERR][${label}]`, e.message))
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  1. TWILIO SMS
+// ══════════════════════════════════════════════════════════════════
+async function sendSMS(rawTo, text) {
+  const to = toE164(rawTo);
+  if (!TWILIO_SID || !TWILIO_TOKEN || !TWILIO_FROM) {
+    console.warn(`[SMS SKIP] Twilio not configured — to=${to}`);
+    return;
   }
+  if (!to) { console.warn("[SMS SKIP] Bad number:", rawTo); return; }
 
-  // No Twilio → return ok silently so frontend doesn't crash
-  if (!twilioClient) {
-    console.warn(`[SMS SKIP] Twilio not configured — would have sent to ${to}`);
-    return res.json({ ok: true, skipped: true, reason: "Twilio not configured" });
-  }
+  const body = new URLSearchParams({ To: to, From: TWILIO_FROM, Body: text }).toString();
+  const auth  = Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64");
 
-  if (!TWILIO_FROM) {
-    console.warn("[SMS SKIP] TWILIO_FROM_NUMBER not set");
-    return res.json({ ok: true, skipped: true, reason: "TWILIO_FROM_NUMBER not set" });
-  }
-
-  try {
-    const result = await twilioClient.messages.create({
-      body: message,
-      from: TWILIO_FROM,
-      to,
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: "api.twilio.com",
+      path:     `/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
+      method:   "POST",
+      headers: {
+        "Authorization":  `Basic ${auth}`,
+        "Content-Type":   "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    }, res => {
+      let raw = "";
+      res.on("data", d => raw += d);
+      res.on("end", () => {
+        let parsed = {};
+        try { parsed = JSON.parse(raw); } catch {}
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          console.log(`✅ [Twilio SMS] to=${to} sid=${parsed.sid}`);
+          resolve(parsed);
+        } else {
+          const msg = `Twilio ${res.statusCode} code=${parsed.code} — ${parsed.message}`;
+          console.error(`❌ [Twilio SMS] to=${to} | ${msg}`);
+          reject(new Error(msg));
+        }
+      });
     });
-    console.log(`[SMS OK] -> ${to} | sid=${result.sid}`);
-    res.json({ ok: true, sid: result.sid });
-  } catch (err) {
-    // Return 200 so frontend doesn't show a red error — just log it
-    console.error(`[SMS ERR] -> ${to} | ${err.message}`);
-    res.json({ ok: false, error: err.message, skipped: true });
+    req.on("error", e => { console.error(`❌ [Twilio SMS] network: ${e.message}`); reject(e); });
+    req.write(body);
+    req.end();
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  2. INFOBIP WHATSAPP
+// ══════════════════════════════════════════════════════════════════
+async function sendWhatsApp(rawTo, text) {
+  const to = toDigits(rawTo);
+  if (!INFOBIP_API_KEY || !INFOBIP_BASE_URL) {
+    console.warn(`[WA SKIP] Infobip not configured — to=${to}`);
+    return;
   }
-});
+  if (!to) { console.warn("[WA SKIP] Bad number:", rawTo); return; }
 
-// ── POST /api/send-email ──────────────────────────────────────────
-app.post("/api/send-email", async (req, res) => {
-  const {
-    to, name, message, lat, lon,
-    severity, riskScore, mapsLink,
-    userName, speed, isAutoCrash,
-  } = req.body;
+  const from = toDigits(INFOBIP_FROM_NUMBER) || "";
+  if (!from) { console.warn("[WA SKIP] INFOBIP_FROM_NUMBER not set"); return; }
 
-  if (!to) return res.status(400).json({ error: "to required" });
+  const payload = JSON.stringify({
+    messages: [{ from, to, content: { text } }],
+  });
 
-  // No mailer → return ok silently
-  if (!mailer) {
-    console.warn(`[EMAIL SKIP] Mailer not configured — would have sent to ${to}`);
-    return res.json({ ok: true, skipped: true, reason: "Gmail not configured" });
+  const hostname = (INFOBIP_BASE_URL || "")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "");
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname,
+      path:   "/whatsapp/1/message/text",
+      method: "POST",
+      headers: {
+        "Authorization":  `App ${INFOBIP_API_KEY}`,
+        "Content-Type":   "application/json",
+        "Accept":         "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    }, res => {
+      let raw = "";
+      res.on("data", d => raw += d);
+      res.on("end", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          console.log(`✅ [Infobip WA] to=${to} status=${res.statusCode}`);
+          resolve(JSON.parse(raw));
+        } else {
+          const msg = `Infobip WA ${res.statusCode}: ${raw.slice(0, 300)}`;
+          console.error(`❌ [Infobip WA] to=${to} | ${msg}`);
+          reject(new Error(msg));
+        }
+      });
+    });
+    req.on("error", e => { console.error(`❌ [Infobip WA] network: ${e.message}`); reject(e); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  3. GMAIL EMAIL
+// ══════════════════════════════════════════════════════════════════
+let _mailer = null;
+function getMailer() {
+  if (_mailer) return _mailer;
+  if (GMAIL_USER && GMAIL_PASS) {
+    try {
+      _mailer = require("nodemailer").createTransport({
+        service: "gmail",
+        auth: { user: GMAIL_USER, pass: GMAIL_PASS },
+        pool: true,
+        maxConnections: 5,
+      });
+    } catch (e) {
+      console.warn("⚠️  [Gmail] createTransport failed:", e.message);
+    }
   }
+  return _mailer;
+}
 
-  const sc = severity === "HIGH" ? "#ea4335" : severity === "MEDIUM" ? "#f9ab00" : "#34a853";
-  const crashBanner = isAutoCrash
-    ? `<div style="background:#fce8e6;border-left:4px solid #ea4335;padding:12px 16px;border-radius:8px;margin-bottom:18px;font-weight:700;color:#b31412;">💥 AUTO CRASH DETECTED — Vehicle speed dropped suddenly</div>`
+function buildEmailHtml(d) {
+  const sc   = d.severity === "HIGH" ? "#E8284A" : d.severity === "MEDIUM" ? "#D97706" : "#1A9B5E";
+  const risk = parseFloat(d.riskScore || 0);
+  const map  = d.mapsLink || `https://maps.google.com/?q=${d.lat},${d.lon}`;
+  const bang = d.isAutoCrash
+    ? `<div style="background:#FFF0F3;border-left:4px solid #E8284A;padding:12px 16px;border-radius:8px;margin-bottom:18px;font-weight:700;color:#E8284A;">💥 AUTO CRASH DETECTED — Vehicle speed dropped suddenly</div>`
     : "";
-
-  const mapsHref = mapsLink || `https://maps.google.com/?q=${lat},${lon}`;
-  const riskVal  = parseFloat(riskScore || 0);
-
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
-<body style="margin:0;padding:24px;background:#f0f4ff;font-family:Arial,sans-serif;">
-<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.1);">
-  <div style="background:linear-gradient(135deg,#ea4335,#c62828);padding:32px;text-align:center;">
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:24px;background:#F4F6FA;font-family:Arial,Helvetica,sans-serif;">
+<div style="max-width:580px;margin:0 auto;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E4E8F0;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+  <div style="background:linear-gradient(135deg,#E8284A 0%,#9B1C1C 100%);padding:32px;text-align:center;">
     <div style="font-size:52px;margin-bottom:8px;">🚨</div>
-    <h1 style="color:#fff;font-size:26px;margin:0;font-weight:800;">EMERGENCY SOS ALERT</h1>
-    <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:14px;">IntelliCrash AI Emergency System</p>
+    <h1 style="color:#FFFFFF;font-size:26px;margin:0;font-weight:900;letter-spacing:0.08em;">EMERGENCY SOS ALERT</h1>
+    <p style="color:rgba(255,255,255,0.75);margin:6px 0 0;font-size:12px;font-family:monospace;">SafeSignal · IntelliCrash Emergency System</p>
   </div>
   <div style="padding:28px 32px;">
-    ${crashBanner}
-    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+    ${bang}
+    <table style="width:100%;border-collapse:separate;border-spacing:0;margin-bottom:20px;">
       <tr>
-        <td style="padding:10px;background:#f8faff;border-radius:8px 0 0 8px;width:50%;">
-          <div style="font-size:11px;color:#6b7a99;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">From</div>
-          <div style="font-weight:700;font-size:16px;">${userName || "Unknown"}</div>
+        <td style="padding:14px 16px;background:#F8F9FC;border-radius:10px 0 0 10px;border:1px solid #E4E8F0;width:50%;vertical-align:top;">
+          <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Sender</div>
+          <div style="font-weight:800;font-size:18px;color:#111827;">${d.userName || "Unknown"}</div>
         </td>
-        <td style="padding:10px;background:${sc}15;border-radius:0 8px 8px 0;width:50%;text-align:right;">
-          <div style="font-size:11px;color:#6b7a99;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Risk Level</div>
-          <div style="font-weight:800;font-size:20px;color:${sc};">${severity || "UNKNOWN"}</div>
+        <td style="padding:14px 16px;background:${sc}0F;border-radius:0 10px 10px 0;border:1px solid ${sc}33;width:50%;text-align:right;vertical-align:top;">
+          <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Risk Level</div>
+          <div style="font-weight:900;font-size:22px;color:${sc};">${d.severity || "UNKNOWN"}</div>
         </td>
       </tr>
     </table>
-    <div style="background:#f8faff;border-radius:10px;padding:14px;margin-bottom:16px;">
-      <div style="font-size:11px;color:#6b7a99;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Risk Score</div>
-      <div style="background:#e8ecf5;border-radius:4px;height:8px;overflow:hidden;">
-        <div style="width:${Math.min(riskVal, 100)}%;background:${sc};height:100%;border-radius:4px;"></div>
+    <div style="background:#F8F9FC;border-radius:10px;padding:14px 16px;margin-bottom:16px;border:1px solid #E4E8F0;">
+      <div style="font-size:10px;color:#6B7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.1em;">Risk Score</div>
+      <div style="background:#E4E8F0;border-radius:4px;height:8px;overflow:hidden;">
+        <div style="width:${Math.min(risk,100)}%;background:${sc};height:100%;border-radius:4px;"></div>
       </div>
-      <div style="font-size:12px;color:#6b7a99;margin-top:6px;">${riskVal.toFixed(1)} / 100${speed ? ` · Speed: ~${speed} km/h` : ""}</div>
+      <div style="font-size:12px;color:#6B7280;margin-top:6px;font-family:monospace;">${risk.toFixed(1)} / 100${d.speed ? ` · Speed: ~${d.speed} km/h` : ""}</div>
     </div>
-    <div style="background:#f8faff;border-radius:10px;padding:14px;margin-bottom:16px;">
-      <div style="font-size:11px;color:#6b7a99;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">Message</div>
-      <div style="font-size:13px;color:#1a1a1a;line-height:1.7;white-space:pre-line;">${message || "Emergency SOS triggered"}</div>
+    <div style="background:#F8F9FC;border-radius:10px;padding:14px 16px;margin-bottom:16px;border:1px solid #E4E8F0;">
+      <div style="font-size:10px;color:#6B7280;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.1em;">GPS Location</div>
+      <div style="font-size:13px;color:#374151;font-family:monospace;">
+        Lat: <strong>${d.lat}</strong> · Lon: <strong>${d.lon}</strong>
+        ${d.gpsAccuracy ? `<br/><span style="color:#6B7280;font-size:11px;">Accuracy: ±${d.gpsAccuracy}m</span>` : ""}
+      </div>
     </div>
-    <a href="${mapsHref}"
-       style="display:block;background:#1a73e8;color:#fff;text-align:center;padding:16px;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px;margin-bottom:18px;">
-      📍 Open Live Location in Google Maps
+    <div style="background:#F8F9FC;border-radius:10px;padding:14px 16px;margin-bottom:20px;border:1px solid #E4E8F0;">
+      <div style="font-size:10px;color:#6B7280;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.1em;">Message</div>
+      <div style="font-size:13px;color:#374151;line-height:1.75;">${d.message || "Emergency SOS triggered"}</div>
+    </div>
+    <a href="${map}" style="display:block;background:#2563EB;color:#FFFFFF;text-align:center;padding:16px;border-radius:10px;text-decoration:none;font-weight:800;font-size:15px;margin-bottom:20px;">
+      📍 OPEN LIVE LOCATION IN GOOGLE MAPS
     </a>
-    <div style="font-size:12px;color:#999;text-align:center;line-height:1.7;">
-      This alert was sent automatically by IntelliCrash SOS.<br/>
-      Please call ${userName || "the sender"} immediately to verify their safety.<br/>
-      Emergency: 112 | Ambulance: 108
+    <table style="width:100%;border-collapse:separate;border-spacing:6px;margin-bottom:16px;">
+      <tr>
+        ${[["🚨","Emergency","112"],["🚑","Ambulance","108"],["🔥","Fire","101"],["⛑️","Disaster","1070"]].map(([e,l,n]) =>
+          `<td style="width:25%;background:#F8F9FC;border:1px solid #E4E8F0;border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:20px;">${e}</div>
+            <div style="font-size:10px;color:#6B7280;margin-top:2px;">${l}</div>
+            <div style="font-weight:700;font-size:13px;color:#111827;">${n}</div>
+          </td>`).join("")}
+      </tr>
+    </table>
+    <div style="font-size:11px;color:#9CA3AF;text-align:center;line-height:1.8;border-top:1px solid #E4E8F0;padding-top:16px;">
+      Sent by <strong style="color:#374151;">SafeSignal SOS</strong> ·
+      Please call <strong style="color:#111827;">${d.userName || "sender"}</strong> immediately<br/>
+      This is an automated emergency alert.
     </div>
   </div>
 </div>
 </body></html>`;
+}
 
+async function sendEmail(to, subject, data) {
+  const m = getMailer();
+  if (!m)  { console.warn(`[EMAIL SKIP] Gmail not configured — to=${to}`); return; }
+  if (!to) { console.warn("[EMAIL SKIP] No recipient"); return; }
   try {
-    await mailer.sendMail({
-      from:    `"IntelliCrash SOS 🚨" <${GMAIL_USER}>`,
+    const info = await m.sendMail({
+      from:    `"SafeSignal SOS 🚨" <${GMAIL_USER}>`,
       to,
-      subject: `🚨 EMERGENCY SOS from ${userName || "Unknown"} — ${severity || "UNKNOWN"} Risk`,
-      text:    message || "Emergency SOS triggered",
-      html,
+      subject,
+      text:    data.message || "Emergency SOS triggered",
+      html:    buildEmailHtml(data),
     });
-    console.log(`[EMAIL OK] -> ${to}`);
-    res.json({ ok: true });
-  } catch (err) {
-    // Return 200 so frontend doesn't crash on email failure
-    console.error(`[EMAIL ERR] -> ${to} | ${err.message}`);
-    res.json({ ok: false, error: err.message, skipped: true });
+    console.log(`✅ [Gmail] to=${to} messageId=${info.messageId}`);
+    return info;
+  } catch (e) {
+    console.error(`❌ [Gmail] to=${to}: ${e.message}`);
+    throw e;
   }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  ROUTES
+// ══════════════════════════════════════════════════════════════════
+
+// ── POST /api/sos ─────────────────────────────────────────────────
+// ✅ FIX: No hardcoded fallback lat/lon — client MUST send real GPS
+app.post("/api/sos", (req, res) => {
+  const {
+    lat,       // REQUIRED — must be real GPS from client
+    lon,       // REQUIRED — must be real GPS from client
+    gpsAccuracy,
+    userName,
+    severity   = "HIGH",
+    riskScore  = 50,
+    message,
+    speed,
+    isAutoCrash,
+    mapsLink,
+    contacts   = [],
+  } = req.body;
+
+  // ── Validate GPS coords — reject if missing or fake ───────────
+  const coordError = validateCoords(lat, lon);
+  if (coordError) {
+    console.error(`[SOS REJECTED] Bad coords from client: lat=${lat} lon=${lon} — ${coordError}`);
+    return res.status(400).json({
+      ok: false,
+      error: `Invalid location: ${coordError}. Please ensure GPS is enabled and try again.`,
+      code:  "GPS_REQUIRED",
+    });
+  }
+
+  const la = parseFloat(lat);
+  const lo = parseFloat(lon);
+
+  console.log(`[SOS] ✅ Real GPS received: ${la.toFixed(5)}, ${lo.toFixed(5)} ±${gpsAccuracy || "?"}m from ${userName || "unknown"}`);
+  appendLog({ lat: la, lon: lo, gpsAccuracy, userName, severity, riskScore, isAutoCrash, ts: new Date().toISOString() });
+
+  const hospitals = nearestHospitals(la, lo);
+
+  // Instant ACK with real nearby hospitals
+  res.json({ ok: true, queued: true, hospitals, alertCount: contacts.length });
+
+  const mapUrl  = mapsLink || `https://maps.google.com/?q=${la},${lo}`;
+  const accText = gpsAccuracy ? ` (±${gpsAccuracy}m)` : "";
+  const smsBody = `🚨 SOS from ${userName || "Unknown"} | Risk: ${severity} | Speed: ${speed || 0} km/h\nGPS${accText}: ${la.toFixed(5)},${lo.toFixed(5)}\nLocation: ${mapUrl}\nCall 112 NOW!`;
+  const waBody  = `🚨 *EMERGENCY SOS*\n*From:* ${userName || "Unknown"}\n*Risk:* ${severity} (${riskScore}/100)${speed ? `\n*Speed:* ${speed} km/h` : ""}${isAutoCrash ? "\n⚠️ *AUTO CRASH DETECTED*" : ""}\n\n📍 *GPS${accText}:*\n${la.toFixed(5)}, ${lo.toFixed(5)}\n${mapUrl}\n\n🆘 Call *112* immediately!`;
+  const subject = `🚨 SOS from ${userName || "Unknown"} — ${severity} Risk`;
+
+  // Notify all contacts
+  for (const c of contacts) {
+    if (c.phone) {
+      bg(`SMS→${c.phone}`,   () => sendSMS(c.phone, smsBody));
+      bg(`WA→${c.phone}`,    () => sendWhatsApp(c.phone, waBody));
+    }
+    if (c.email) {
+      bg(`Email→${c.email}`, () => sendEmail(c.email, subject, { ...req.body, lat: la, lon: lo, mapsLink: mapUrl }));
+    }
+  }
+
+  // Admin fallback
+  if (ADMIN_PHONE)    bg("SMS→admin",   () => sendSMS(ADMIN_PHONE, smsBody));
+  if (ADMIN_WHATSAPP) bg("WA→admin",    () => sendWhatsApp(ADMIN_WHATSAPP, waBody));
+  if (ADMIN_EMAIL)    bg("Email→admin", () => sendEmail(ADMIN_EMAIL, subject, { ...req.body, lat: la, lon: lo, mapsLink: mapUrl }));
 });
 
-// ── GET /api/health — env check ───────────────────────────────────
-app.get("/api/health", (req, res) => {
-  res.json({
-    ok:           true,
-    ts:           new Date().toISOString(),
-    twilio_ready: twilioClient !== null,
-    gmail_ready:  mailer !== null,
-    twilio_from:  TWILIO_FROM || "NOT SET",
-    gmail_user:   GMAIL_USER  || "NOT SET",
-  });
+// ── POST /api/send-sms ────────────────────────────────────────────
+app.post("/api/send-sms", (req, res) => {
+  const { to, message } = req.body;
+  if (!to || !message) return res.status(400).json({ error: "to and message required" });
+  res.json({ ok: true, queued: true });
+  bg("SMS→manual", () => sendSMS(to, message));
 });
 
-// ── GET /api/nearby — proxy to Python backend ─────────────────────
+// ── POST /api/send-whatsapp ───────────────────────────────────────
+app.post("/api/send-whatsapp", (req, res) => {
+  const { to, message } = req.body;
+  if (!to || !message) return res.status(400).json({ error: "to and message required" });
+  res.json({ ok: true, queued: true });
+  bg("WA→manual", () => sendWhatsApp(to, message));
+});
+
+// ── POST /api/send-email ──────────────────────────────────────────
+app.post("/api/send-email", (req, res) => {
+  const { to } = req.body;
+  if (!to) return res.status(400).json({ error: "to required" });
+  res.json({ ok: true, queued: true });
+  const sub = `🚨 SOS from ${req.body.userName || "Unknown"} — ${req.body.severity || "UNKNOWN"} Risk`;
+  bg("Email→manual", () => sendEmail(to, sub, req.body));
+});
+
+// ── GET /api/nearby ───────────────────────────────────────────────
+// ✅ FIX: No hardcoded Shimla fallback — requires real lat/lon
 app.get("/api/nearby", async (req, res) => {
-  const { lat = 31.1048, lon = 77.1734 } = req.query;
+  const lat = parseFloat(req.query.lat);
+  const lon = parseFloat(req.query.lon);
+
+  const coordError = validateCoords(lat, lon);
+  if (coordError) {
+    return res.status(400).json({ error: `Invalid location: ${coordError}`, code: "GPS_REQUIRED" });
+  }
+
   try {
-    const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
-    const r = await fetch(`http://127.0.0.1:8000/api/nearby?lat=${lat}&lon=${lon}`, { timeout: 8000 });
-    const d = await r.json();
-    res.json(d);
-  } catch (err) {
-    // Return static fallback so SOS page still works offline
-    res.json({
-      nearby: [
-        { name: "HP Police (112)",   type: "police",   phone: "112" },
-        { name: "HP Ambulance (108)",type: "hospital", phone: "108" },
-        { name: "IGMC Shimla",       type: "hospital", phone: "0177-2804251", lat: 31.1048, lon: 77.1734 },
-      ],
-      count: 3,
-      source: "static_fallback",
-    });
+    const { default: fetch } = await import("node-fetch");
+    const r = await Promise.race([
+      fetch(`http://127.0.0.1:8000/api/nearby?lat=${lat}&lon=${lon}`),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000)),
+    ]);
+    return res.json(await r.json());
+  } catch {
+    const nearby = nearestHospitals(lat, lon);
+    return res.json({ nearby, count: nearby.length, source: "static_db" });
   }
 });
 
-// ── Catch-all — serve React frontend ─────────────────────────────
-app.use((req, res) => {
-  const index = path.join(__dirname, "build", "index.html");
-  res.sendFile(index, (err) => {
-    if (err) res.status(200).send("IntelliCrash SOS Server running");
+// ── GET /api/health ───────────────────────────────────────────────
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok:             true,
+    version:        "v7-real-gps",
+    ts:             new Date().toISOString(),
+    uptime_s:       Math.round(process.uptime()),
+    twilio_sms:     !!(TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM),
+    twilio_from:    TWILIO_FROM        || "NOT SET",
+    infobip_wa:     !!(INFOBIP_API_KEY && INFOBIP_BASE_URL),
+    infobip_base:   INFOBIP_BASE_URL   || "NOT SET",
+    infobip_from:   INFOBIP_FROM_NUMBER|| "NOT SET",
+    gmail:          !!getMailer(),
+    gmail_user:     GMAIL_USER         || "NOT SET",
+    admin_phone:    ADMIN_PHONE        || "NOT SET",
+    admin_whatsapp: ADMIN_WHATSAPP     || "NOT SET",
+    admin_email:    ADMIN_EMAIL        || "NOT SET",
+    hospital_db:    HOSPITALS.length,
+    gps_policy:     "client_must_send_real_coords — no server fallback",
   });
 });
+
+// ── GET /api/logs ─────────────────────────────────────────────────
+app.get("/api/logs", (_req, res) => {
+  res.json({ ok: true, count: sosLog.length, logs: [...sosLog].reverse() });
+});
+
+// ── GET /api/test ─────────────────────────────────────────────────
+app.get("/api/test", (_req, res) => {
+  // Test uses a real HP coordinate (IGMC Shimla) — not a zero/fake
+  const testLat = 31.1048, testLon = 77.1734;
+  const mapUrl  = `https://maps.google.com/?q=${testLat},${testLon}`;
+  const smsBody = `🚨 [TEST] SafeSignal SOS v7 check — channels working | ${mapUrl}`;
+  const waBody  = `🚨 *[TEST] SafeSignal SOS v7*\n\nSystem check — all channels OK.\n📍 ${mapUrl}`;
+  const subject = "🚨 [TEST] SafeSignal SOS v7 System Check";
+  const testData = { userName:"TEST", severity:"HIGH", riskScore:99, message:"System test", lat:testLat, lon:testLon, mapsLink: mapUrl };
+
+  res.json({ ok: true, message: "Test alerts fired — check console + your phone/email" });
+
+  if (ADMIN_PHONE)    bg("SMS→test",   () => sendSMS(ADMIN_PHONE, smsBody));
+  if (ADMIN_WHATSAPP) bg("WA→test",    () => sendWhatsApp(ADMIN_WHATSAPP, waBody));
+  if (ADMIN_EMAIL)    bg("Email→test", () => sendEmail(ADMIN_EMAIL, subject, testData));
+
+  console.log("🧪 [TEST] Fired to admin channels");
+});
+
+// ── Catch-all → React SPA ─────────────────────────────────────────
+app.use((_req, res) => {
+  const idx = path.join(__dirname, "build", "index.html");
+  res.sendFile(idx, err => { if (err) res.status(200).send("SafeSignal SOS ✅"); });
+});
+
+app.use((err, _req, res, _next) => {
+  console.error("[ERR]", err.message);
+  if (!res.headersSent) res.status(500).json({ ok: false, error: "Internal error" });
+});
+
+process.on("unhandledRejection", r => console.error("[UnhandledRejection]", r));
+
 // ── Start ─────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`\n🚨 IntelliCrash SOS Server -> http://localhost:${PORT}`);
-  console.log(`   Twilio SMS : ${twilioClient ? "✅ Ready" : "⚠️  Skipped (credentials missing)"}`);
-  console.log(`   Gmail Email: ${mailer      ? "✅ Ready" : "⚠️  Skipped (credentials missing)"}`);
-  console.log(`   Health    : http://localhost:${PORT}/api/health\n`);
+  console.log(`\n🚨 SafeSignal SOS v7  →  http://localhost:${PORT}`);
+  console.log(`   Health : GET  /api/health`);
+  console.log(`   Test   : GET  /api/test`);
+  console.log(`   SOS    : POST /api/sos  (lat+lon REQUIRED)`);
+  console.log(`   Nearby : GET  /api/nearby?lat=X&lon=Y  (required)`);
+  bootCheck();
+  getMailer();
 });

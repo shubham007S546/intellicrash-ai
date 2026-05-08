@@ -1,115 +1,16 @@
-/**
- * AdminLogin.jsx — IntelliCrash v3.0 FINAL
- * ✅ Login Lamp aesthetic with CSS animations (no MUI keyframe bugs)
- * ✅ Lamp glows amber when card/fields are focused
- * ✅ Google + GitHub OAuth
- * ✅ Email/Password FIXED (Supabase verifies first, then whitelist check)
- * ✅ Imports login.css for reliable CSS animations
- */
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../services/supabase";
-import {
-  Box, Button, TextField, CircularProgress,
-  Alert, InputAdornment, IconButton,
-} from "@mui/material";
-import { Visibility, VisibilityOff } from "@mui/icons-material";
-import "./login.css"; // place login.css next to this file in /pages/
+import { Shield, Mail, Lock, ArrowRight, Chrome, Github, Eye, EyeOff } from "lucide-react";
 
 const ADMIN_EMAILS = ["shubhamabhi004@gmail.com"];
 
-/* ── Icons ──────────────────────────────────────────────────────────────── */
-const GoogleIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" style={{ flexShrink:0 }}>
-    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-  </svg>
-);
-const GitHubIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink:0 }}>
-    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
-  </svg>
-);
+const GoogleIcon = () => <Chrome size={18} />;
+const GitHubIcon = () => <Github size={18} />;
 
-/* ── Lamp SVG ────────────────────────────────────────────────────────────── */
-function Lamp({ isOn }) {
-  return (
-    <div className="lamp-float" style={{ position:"relative", width:150, height:200 }}>
-      {isOn && (
-        <div className="lamp-glow" style={{
-          position:"absolute", top:0, left:"50%",
-          width:220, height:220, borderRadius:"50%",
-          background:"radial-gradient(circle,rgba(251,191,36,0.32) 0%,rgba(251,191,36,0.06) 55%,transparent 75%)",
-          pointerEvents:"none", zIndex:0,
-        }} />
-      )}
-      <svg width="150" height="200" viewBox="0 0 150 200" style={{ position:"relative", zIndex:1 }}>
-        <defs>
-          <radialGradient id="adm-shade" cx="50%" cy="28%" r="72%">
-            <stop offset="0%"   stopColor={isOn ? "#fef9c3" : "#d1d5db"} />
-            <stop offset="55%"  stopColor={isOn ? "#fbbf24" : "#9ca3af"} />
-            <stop offset="100%" stopColor={isOn ? "#b45309" : "#6b7280"} />
-          </radialGradient>
-          <radialGradient id="adm-base" cx="50%" cy="0%" r="100%">
-            <stop offset="0%"   stopColor="#e5e7eb" />
-            <stop offset="100%" stopColor="#9ca3af" />
-          </radialGradient>
-          <filter id="adm-blur"><feGaussianBlur stdDeviation="3"/></filter>
-        </defs>
-        <ellipse cx="75" cy="60" rx="54" ry="19"
-          fill={isOn?"#92400e":"#374151"} opacity="0.35" filter="url(#adm-blur)"/>
-        <path d="M22 58 Q24 96 44 108 L106 108 Q126 96 128 58 Z"
-          fill="url(#adm-shade)" stroke={isOn?"#b45309":"#4b5563"} strokeWidth="1.2"/>
-        <rect x="38" y="106" width="74" height="9" rx="4.5"
-          fill={isOn?"#92400e":"#6b7280"}/>
-        {isOn && <ellipse cx="75" cy="104" rx="28" ry="6" fill="rgba(251,191,36,0.4)"/>}
-        <rect x="70" y="115" width="10" height="58" rx="5" fill="url(#adm-base)"/>
-        <line x1="75" y1="115" x2="75" y2="140"
-          stroke={isOn?"#fbbf24":"#9ca3af"} strokeWidth="1.5" strokeDasharray="3,3"/>
-        <circle cx="75" cy="144" r="4.5" fill={isOn?"#fbbf24":"#9ca3af"}/>
-        <ellipse cx="75" cy="177" rx="30" ry="7" fill="#1f2937" opacity="0.5"/>
-        <rect x="54" y="169" width="42" height="10" rx="5" fill="url(#adm-base)"/>
-        {isOn && <path d="M55 180 Q75 176 95 180 L130 200 L20 200 Z" fill="rgba(251,191,36,0.06)"/>}
-      </svg>
-      {isOn && (
-        <div className="floor-glow" style={{
-          position:"absolute", bottom:-20, left:"50%",
-          transform:"translateX(-50%)",
-          width:220, height:50,
-          background:"radial-gradient(ellipse,rgba(251,191,36,0.16) 0%,transparent 72%)",
-          borderRadius:"50%", pointerEvents:"none",
-        }}/>
-      )}
-    </div>
-  );
-}
-
-/* ── Styled field ────────────────────────────────────────────────────────── */
-function LampField({ lampOn, sx, ...props }) {
-  const accent = lampOn ? "#fbbf24" : "#6366f1";
-  return (
-    <TextField fullWidth size="small" {...props} sx={{
-      mb:1.5,
-      "& .MuiOutlinedInput-root":{
-        borderRadius:2.5, fontSize:13, color:"#f5f0e8",
-        background:"rgba(255,255,255,0.05)", transition:"background 0.3s",
-        "& fieldset":{ borderColor:"rgba(255,255,255,0.09)", transition:"border-color 0.3s, box-shadow 0.3s" },
-        "&:hover fieldset":{ borderColor:`${accent}66` },
-        "&.Mui-focused fieldset":{ borderColor:accent, boxShadow:`0 0 0 3px ${accent}20` },
-      },
-      "& input":{ color:"#f5f0e8", "&::placeholder":{ color:"rgba(255,255,255,0.22)", opacity:1 } },
-      "& label":{ color:"rgba(255,255,255,0.28)", fontSize:12 },
-      "& label.Mui-focused":{ color:accent },
-      ...sx,
-    }}/>
-  );
-}
-
-/* ── Component ───────────────────────────────────────────────────────────── */
 export default function AdminLogin() {
-  const nav = useNavigate();
+  const navigate = useNavigate();
   const [email,           setEmail]           = useState("");
   const [password,        setPassword]        = useState("");
   const [showPass,        setShowPass]        = useState(false);
@@ -117,56 +18,49 @@ export default function AdminLogin() {
   const [providerLoading, setProviderLoading] = useState("");
   const [error,           setError]           = useState("");
   const [checkingSession, setCheckingSession] = useState(true);
-  const [lampOn,          setLampOn]          = useState(false);
-  const lampTimer = useRef(null);
-
-  const turnOn  = () => { clearTimeout(lampTimer.current); setLampOn(true); };
-  const turnOff = () => { lampTimer.current = setTimeout(() => setLampOn(false), 3000); };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data?.session?.user) {
-        if (ADMIN_EMAILS.includes(data.session.user.email)) nav("/admin", { replace:true });
-        else { supabase.auth.signOut(); setError("Access denied. Not an authorised admin."); }
+        if (ADMIN_EMAILS.includes(data.session.user.email)) navigate("/admin", { replace: true });
       }
       setCheckingSession(false);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (session?.user) {
-        if (ADMIN_EMAILS.includes(session.user.email)) nav("/admin", { replace:true });
-        else { supabase.auth.signOut(); setError("Access denied. Only authorised admin allowed."); }
-      }
-    });
-    return () => listener?.subscription?.unsubscribe();
-  }, [nav]);
+  }, [navigate]);
 
   const handleOAuth = async (provider) => {
-    setProviderLoading(provider); setError("");
-    const { error:e } = await supabase.auth.signInWithOAuth({
+    setProviderLoading(provider);
+    setError("");
+    const { error: e } = await supabase.auth.signInWithOAuth({
       provider,
-      options:{ redirectTo:`${window.location.origin}/admin-login` },
+      options: { redirectTo: `${window.location.origin}/admin-login` },
     });
     if (e) setError(e.message);
-    setProviderLoading("");
   };
 
-  // ✅ FIXED: Supabase verifies password first, THEN we check admin whitelist
-  const handleEmail = async () => {
-    if (!email.trim() || !password.trim()) { setError("Please enter email and password."); return; }
+  const handleEmail = async (e) => {
+    e?.preventDefault();
+    if (!email.trim() || !password.trim()) { setError("All fields required."); return; }
     setLoading(true); setError("");
-    const { data, error:e } = await supabase.auth.signInWithPassword({ email:email.trim(), password });
-    if (e) { setError(e.message); setLoading(false); return; }
-    if (!ADMIN_EMAILS.includes(data.user?.email)) {
-      await supabase.auth.signOut();
-      setError("Access denied. This email is not an authorised admin.");
+    try {
+      const { data, error: e } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (e) setError(e.message);
+      else if (data.user && !ADMIN_EMAILS.includes(data.user.email)) {
+        await supabase.auth.signOut();
+        setError("Access denied. Admin authorization required.");
+      } else if (data.user) {
+        navigate("/admin", { replace: true });
+      }
+    } catch (err) {
+      setError("Network error.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (checkingSession) return (
-    <div style={{ display:"flex", alignItems:"center", justifyContent:"center",
-      height:"100vh", background:"linear-gradient(135deg,#0c0c14,#13101f)" }}>
-      <CircularProgress sx={{ color:"#fbbf24" }}/>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f172a" }}>
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} style={{ width: 40, height: 40, border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "#3b82f6", borderRadius: "50%" }} />
     </div>
   );
 
@@ -174,192 +68,123 @@ export default function AdminLogin() {
 
   return (
     <div style={{
-      display:"flex", alignItems:"center", justifyContent:"center",
-      minHeight:"100vh",
-      background: lampOn
-        ? "linear-gradient(135deg,#0f0d18,#1a1426,#1c1508)"
-        : "linear-gradient(135deg,#0c0c14,#13101f,#0f0c1a)",
-      transition:"background 1.1s ease",
-      fontFamily:"'DM Sans',sans-serif",
-      overflow:"hidden", position:"relative",
+      minHeight: "100vh",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      background: "radial-gradient(circle at center, #1e293b 0%, #0f172a 100%)",
+      padding: "20px",
+      position: "relative",
+      overflow: "hidden"
     }}>
-      <div className="dot-grid"/>
+      {/* Background Ambience */}
+      <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "100vw", height: "100vh", background: "radial-gradient(circle at center, rgba(37, 99, 235, 0.05) 0%, transparent 70%)", pointerEvents: "none" }} />
 
-      {lampOn && (
-        <div className="floor-glow" style={{
-          position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)",
-          width:700, height:220,
-          background:"radial-gradient(ellipse,rgba(251,191,36,0.07) 0%,transparent 70%)",
-          pointerEvents:"none", zIndex:1,
-        }}/>
-      )}
-
-      <div className="page-in" style={{
-        display:"flex", alignItems:"center", gap:48,
-        padding:"0 16px", flexWrap:"wrap", justifyContent:"center",
-        position:"relative", zIndex:2,
-      }}>
-
-        {/* ── Lamp ── */}
-        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:12 }}>
-          <p style={{
-            fontFamily:"'Syne',serif", fontStyle:"italic",
-            fontSize:26, fontWeight:300, margin:0,
-            color: lampOn ? "rgba(251,191,36,0.65)" : "rgba(255,255,255,0.14)",
-            letterSpacing:"-0.02em", transition:"color 1s ease",
-          }}>Admin Portal</p>
-
-          <Lamp isOn={lampOn}/>
-
-          <p style={{
-            fontSize:9, margin:0,
-            color: lampOn ? "rgba(251,191,36,0.45)" : "rgba(255,255,255,0.1)",
-            letterSpacing:"0.18em", textTransform:"uppercase",
-            transition:"color 1s ease",
-          }}>
-            {lampOn ? "secured · illuminated" : "click to illuminate"}
-          </p>
-        </div>
-
-        {/* ── Card ── */}
-        <div
-          className="card-shine"
-          onClick={turnOn}
-          style={{
-            width:"100%", maxWidth:400,
-            background: lampOn ? "rgba(28,22,8,0.94)" : "rgba(18,18,30,0.94)",
-            border: lampOn ? "1px solid rgba(251,191,36,0.22)" : "1px solid rgba(255,255,255,0.07)",
-            borderRadius:20, padding:"36px 32px",
-            boxShadow: lampOn
-              ? "0 32px 80px rgba(0,0,0,0.75),0 0 60px rgba(251,191,36,0.07)"
-              : "0 32px 80px rgba(0,0,0,0.65)",
-            backdropFilter:"blur(24px)",
-            transition:"background 0.8s ease,border-color 0.8s ease,box-shadow 0.8s ease",
-            position:"relative", overflow:"hidden",
-          }}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5 }}
+        style={{
+          width: "100%", maxWidth: 420,
+          background: "rgba(30, 41, 59, 0.7)",
+          backdropFilter: "blur(20px)",
+          borderRadius: 28,
+          border: "1px solid rgba(255, 255, 255, 0.1)",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+          padding: 40,
+          zIndex: 1,
+          textAlign: "center"
+        }}
+      >
+        <motion.div
+          initial={{ y: -10 }}
+          animate={{ y: 0 }}
+          style={{ width: 64, height: 64, background: "rgba(59, 130, 246, 0.1)", border: "1px solid rgba(59, 130, 246, 0.3)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}
         >
-          {/* Header */}
-          <div style={{ textAlign:"center", marginBottom:28 }}>
-            <div style={{
-              fontSize:42, marginBottom:6,
-              filter: lampOn ? "drop-shadow(0 0 14px rgba(251,191,36,0.65))" : "none",
-              transition:"filter 0.8s ease",
-            }}>🛡️</div>
-            <p style={{
-              fontFamily:"'Syne',sans-serif", fontWeight:900, fontSize:22, margin:"0 0 3px",
-              color: lampOn ? "#fef3c7" : "#f0f0f8",
-              transition:"color 0.8s ease",
-            }}>Welcome</p>
-            <p style={{
-              fontSize:10, margin:0, letterSpacing:"0.2em", textTransform:"uppercase",
-              color: lampOn ? "rgba(251,191,36,0.4)" : "rgba(255,255,255,0.22)",
-              transition:"color 0.8s ease",
-            }}>IntelliCrash · Admin</p>
+          <Shield size={32} color="#3b82f6" />
+        </motion.div>
+
+        <h1 style={{ fontSize: 24, fontWeight: 900, color: "#f8fafc", margin: "0 0 8px", letterSpacing: "-0.5px" }}>Admin Access</h1>
+        <p style={{ fontSize: 13, color: "#94a3b8", marginBottom: 32, fontWeight: 500 }}>Secure authorization required to access system controls</p>
+
+        {error && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: "12px", borderRadius: 12, background: "rgba(239, 68, 68, 0.1)", color: "#fca5a5", fontSize: 13, fontWeight: 600, marginBottom: 24, border: "1px solid rgba(239, 68, 68, 0.2)" }}>
+            {error}
+          </motion.div>
+        )}
+
+        <form onSubmit={handleEmail} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ position: "relative" }}>
+            <Mail style={{ position: "absolute", left: 14, top: 14, color: "#475569" }} size={18} />
+            <input
+              type="email"
+              required
+              placeholder="Admin Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={{ width: "100%", padding: "14px 14px 14px 44px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(15, 23, 42, 0.5)", color: "#f1f5f9", outline: "none", fontSize: 14, boxSizing: "border-box" }}
+            />
           </div>
 
-          {error && (
-            <Alert severity="error" onClose={() => setError("")} sx={{
-              mb:2, borderRadius:2, fontSize:12,
-              background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.25)",
-              color:"#fca5a5", "& .MuiAlert-icon":{ color:"#f87171" },
-            }}>{error}</Alert>
-          )}
-
-          {/* OAuth */}
-          <div style={{ display:"flex", gap:12, marginBottom:16 }}>
-            {[
-              { p:"google", label:"Google", Icon:GoogleIcon },
-              { p:"github", label:"GitHub", Icon:GitHubIcon },
-            ].map(({ p, label, Icon }) => (
-              <Button key={p} fullWidth onClick={() => handleOAuth(p)} disabled={busy}
-                startIcon={
-                  providerLoading===p
-                    ? <CircularProgress size={13} sx={{ color:"rgba(255,255,255,0.4)" }}/>
-                    : <Icon/>
-                }
-                sx={{
-                  py:1.2, borderRadius:2.5, fontWeight:600, fontSize:13, textTransform:"none",
-                  color: lampOn ? "#fef3c7" : "#dde0f0",
-                  background:"rgba(255,255,255,0.04)",
-                  border: lampOn ? "1px solid rgba(251,191,36,0.18)" : "1px solid rgba(255,255,255,0.08)",
-                  "&:hover":{ background: lampOn ? "rgba(251,191,36,0.09)" : "rgba(255,255,255,0.08)",
-                    borderColor: lampOn ? "rgba(251,191,36,0.38)" : "rgba(255,255,255,0.18)" },
-                  "&:disabled":{ color:"rgba(255,255,255,0.2)" },
-                  transition:"all 0.3s",
-                }}>
-                {label}
-              </Button>
-            ))}
+          <div style={{ position: "relative" }}>
+            <Lock style={{ position: "absolute", left: 14, top: 14, color: "#475569" }} size={18} />
+            <input
+              type={showPass ? "text" : "password"}
+              required
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ width: "100%", padding: "14px 14px 14px 44px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(15, 23, 42, 0.5)", color: "#f1f5f9", outline: "none", fontSize: 14, boxSizing: "border-box" }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass(!showPass)}
+              style={{ position: "absolute", right: 14, top: 14, background: "none", border: "none", color: "#475569", cursor: "pointer" }}
+            >
+              {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
           </div>
 
-          {/* Divider */}
-          <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
-            <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }}/>
-            <span style={{ fontSize:11, color:"rgba(255,255,255,0.2)" }}>or</span>
-            <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }}/>
-          </div>
+          <motion.button
+            whileHover={{ scale: 1.02, background: "#3b82f6" }}
+            whileTap={{ scale: 0.98 }}
+            disabled={busy}
+            style={{ width: "100%", padding: "16px", borderRadius: 14, background: "#2563eb", color: "#fff", fontSize: 14, fontWeight: 800, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 8 }}
+          >
+            {loading ? "Authenticating..." : "Authorize Access"} <ArrowRight size={18} />
+          </motion.button>
+        </form>
 
-          {/* Fields */}
-          <LampField label="Admin Email" placeholder="admin@example.com"
-            value={email} lampOn={lampOn}
-            onChange={e => { setEmail(e.target.value); setError(""); }}
-            onFocus={turnOn} onBlur={turnOff}
-          />
-          <LampField label="Password" type={showPass?"text":"password"}
-            placeholder="••••••••" value={password} lampOn={lampOn}
-            onChange={e => { setPassword(e.target.value); setError(""); }}
-            onFocus={turnOn} onBlur={turnOff}
-            onKeyDown={e => e.key==="Enter" && !busy && handleEmail()}
-            InputProps={{
-              endAdornment:(
-                <InputAdornment position="end">
-                  <IconButton size="small" onClick={() => setShowPass(p=>!p)}
-                    sx={{ color:"rgba(255,255,255,0.2)",
-                      "&:hover":{ color: lampOn ? "#fbbf24" : "rgba(255,255,255,0.5)" } }}>
-                    {showPass ? <VisibilityOff fontSize="small"/> : <Visibility fontSize="small"/>}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-            sx={{ mb:2 }}
-          />
-
-          {/* Submit */}
-          <Button fullWidth onClick={handleEmail} disabled={busy} sx={{
-            py:1.45, borderRadius:2.5, fontWeight:800, fontSize:14,
-            textTransform:"none", letterSpacing:"0.02em",
-            background: lampOn
-              ? "linear-gradient(135deg,#f59e0b,#d97706)"
-              : "linear-gradient(135deg,#6366f1,#4f46e5)",
-            color: lampOn ? "#1c1200" : "#fff",
-            boxShadow: lampOn
-              ? "0 6px 24px rgba(245,158,11,0.42),inset 0 1px 0 rgba(255,255,255,0.18)"
-              : "0 6px 24px rgba(99,102,241,0.38)",
-            "&:hover":{
-              background: lampOn
-                ? "linear-gradient(135deg,#fbbf24,#f59e0b)"
-                : "linear-gradient(135deg,#818cf8,#6366f1)",
-              transform:"translateY(-2px)",
-              boxShadow: lampOn
-                ? "0 10px 32px rgba(245,158,11,0.52)"
-                : "0 10px 32px rgba(99,102,241,0.48)",
-            },
-            "&:disabled":{ background:"rgba(255,255,255,0.07)", color:"rgba(255,255,255,0.22)" },
-            transition:"all 0.3s",
-          }}>
-            {loading
-              ? <CircularProgress size={18} sx={{ color: lampOn ? "#1c1200" : "#fff" }}/>
-              : "Sign In as Admin"}
-          </Button>
-
-          <p style={{
-            textAlign:"center", fontSize:10,
-            color:"rgba(255,255,255,0.14)", marginTop:20, lineHeight:1.9,
-          }}>
-            🔒 Restricted to authorised admin only<br/>
-            IntelliCrash · HP Road Safety · iRAD 2025-26
-          </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "24px 0", color: "#334155" }}>
+          <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.05)" }} />
+          <span style={{ fontSize: 11, fontWeight: 700 }}>Social Identity</span>
+          <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.05)" }} />
         </div>
+
+        <div style={{ display: "flex", gap: 12 }}>
+          <motion.button
+            whileHover={{ y: -2, background: "rgba(255,255,255,0.05)" }}
+            onClick={() => handleOAuth("google")}
+            disabled={busy}
+            style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#cbd5e1" }}
+          >
+            <GoogleIcon /> Google
+          </motion.button>
+          <motion.button
+            whileHover={{ y: -2, background: "rgba(255,255,255,0.05)" }}
+            onClick={() => handleOAuth("github")}
+            disabled={busy}
+            style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#cbd5e1" }}
+          >
+            <GitHubIcon /> GitHub
+          </motion.button>
+        </div>
+
+        <p style={{ fontSize: 11, color: "#475569", marginTop: 32, lineHeight: 1.6 }}>
+          Admin sessions are monitored. Access granted to<br />authorized iRAD personnel only.
+        </p>
+      </motion.div>
+
+      <div style={{ position: "absolute", bottom: 20, textAlign: "center", width: "100%", color: "#334155", fontSize: 11, fontWeight: 600 }}>
+        INTELLICRASH CORE v3.1 · RESTRICTED AREA
       </div>
     </div>
   );
