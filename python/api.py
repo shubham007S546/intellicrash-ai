@@ -812,9 +812,9 @@ def _run_rf(data: PredictRequest):
     score = 0.0
     for cls, p in zip(classes, proba):
         c = int(cls)
-        if c == 1: score += float(p) * 20.0
-        elif c == 2: score += float(p) * 55.0
-        elif c == 3: score += float(p) * 90.0
+        if c == 1: score += float(p) * 15.0 # Low
+        elif c == 2: score += float(p) * 45.0 # Medium
+        elif c == 3: score += float(p) * 75.0 # High
     return str(int(pred)), min(100.0, max(0.0, score)), {str(int(cls)): round(float(p), 4) for cls, p in zip(classes, proba)}
 
 
@@ -944,30 +944,30 @@ def _compute_risk_boosts(data: PredictRequest) -> tuple:
     elif wx == 2: boosts.append(("Fog reducing visibility", 25))
     elif wx == 1: boosts.append(("Rain - wet roads", 18))
 
-    if tod == 3: boosts.append(("Night driving in HP", 18))
-    elif tod == 2: boosts.append(("Evening - reduced visibility", 8))
+    if tod == 3: boosts.append(("Night driving in HP", 12)) # Toned down from 18
+    elif tod == 2: boosts.append(("Evening - reduced visibility", 6))
 
-    if vis < 100: boosts.append(("Near-zero visibility (<100m)", 30))
-    elif vis < 300: boosts.append(("Poor visibility (<300m)", 20))
-    elif vis < 1000: boosts.append(("Reduced visibility (<1km)", 12))
-    elif vis < 3000: boosts.append(("Limited visibility (<3km)", 5))
+    if vis < 100: boosts.append(("Near-zero visibility (<100m)", 20))
+    elif vis < 300: boosts.append(("Poor visibility (<300m)", 15))
+    elif vis < 1000: boosts.append(("Reduced visibility (<1km)", 8))
+    elif vis < 3000: boosts.append(("Limited visibility (<3km)", 3))
 
-    if rc == 2: boosts.append(("Icy road surface", 25))
-    elif rc == 3: boosts.append(("Road under repair", 15))
-    elif rc == 1: boosts.append(("Wet road surface", 12))
+    if rc == 2: boosts.append(("Icy road surface", 18))
+    elif rc == 3: boosts.append(("Road under repair", 10))
+    elif rc == 1: boosts.append(("Wet road surface", 8))
 
-    if lc == 1: boosts.append(("Dark/unlit road", 14))
-    if cz == 1: boosts.append(("iRAD accident hotspot zone", 18))
+    if lc == 1: boosts.append(("Dark/unlit road", 10))
+    if cz == 1: boosts.append(("iRAD accident hotspot zone", 12))
 
-    if veh > 20: boosts.append(("Very high traffic density", 18))
-    elif veh > 10: boosts.append(("High traffic density", 10))
+    if veh > 20: boosts.append(("Very high traffic density", 12))
+    elif veh > 10: boosts.append(("High traffic density", 7))
 
     factor_count = len(boosts)
     total = sum(b for _, b in boosts)
 
-    if factor_count >= 5: total = total * 1.8
-    elif factor_count >= 3: total = total * 1.4
-    elif factor_count >= 2: total = total * 1.15
+    if factor_count >= 5: total = total * 1.25  # Toned down from 1.8
+    elif factor_count >= 3: total = total * 1.1 # Toned down from 1.4
+    elif factor_count >= 2: total = total * 1.05 # Toned down from 1.15
 
     return round(total, 1), boosts, factor_count
 
@@ -1269,55 +1269,45 @@ def predict(data: PredictRequest, request: Request):
             float(data.speed), int(data.weather),
             int(data.timeOfDay), float(data.visibility)
         )
-        boost = _hp_calibration(data)
-        rf_boosted = min(100.0, rf_score + boost)
+        
+        # ── ENSEMBLE BLENDING ─────────────────────────────────────────────
+        if lstm_score is not None:
+            rf_weight, lstm_weight = _compute_ensemble_weights(rf_score, lstm_score)
+            base_ensemble = rf_weight * rf_score + lstm_weight * lstm_score
+            model_used = f"Ensemble (RF {rf_weight*100:.0f}% / LSTM {lstm_weight*100:.0f}%)"
+        else:
+            rf_weight, lstm_weight = 1.0, 0.0
+            base_ensemble = rf_score
+            model_used = "Random Forest"
 
+        # ── DYNAMIC RISK BOOSTS ───────────────────────────────────────────
+        # Note: _hp_calibration is now implicit in total_boost
+        total_boost, boosts_list, factor_count = _compute_risk_boosts(data)
         season, sdata = _get_season()
         seasonal_boost = sdata["boost"]
 
-        # ── ADAPTIVE ENSEMBLE: RF + LSTM with dynamic weighting ──────────
-        if lstm_score is not None:
-            rf_weight, lstm_weight = _compute_ensemble_weights(rf_boosted, lstm_score)
-            base_ensemble = rf_weight * rf_boosted + lstm_weight * lstm_score
-            model_used = f"RF+LSTM Ensemble (RF {rf_weight*100:.0f}% / LSTM {lstm_weight*100:.0f}%)"
-        else:
-            rf_weight, lstm_weight = 1.0, 0.0
-            base_ensemble = rf_boosted
-            model_used = "Random Forest" if rf_model else "Rule-Based Fallback"
-
-        # ── RISK BOOSTS with multi-factor cascade ─────────────────────────
-        total_boost, boosts_list, factor_count = _compute_risk_boosts(data)
-
-        # Seasonal boost - multiplicative for extreme seasons
-        if seasonal_boost >= 14:
-            final = min(100.0, base_ensemble + total_boost * 1.1 + seasonal_boost * 0.5)
-        else:
-            final = min(100.0, base_ensemble + total_boost * 0.8 + seasonal_boost * 0.3)
-
-        final = round(final, 2)
+        # Final Score: Base + Hazards (Capped Hazards)
+        # Hazard boost is dampened as base risk rises to avoid ceiling hits
+        hazard_damping = max(0.4, 1.0 - (base_ensemble / 100.0))
+        final = base_ensemble + (total_boost * hazard_damping) + (seasonal_boost * 0.2)
+        
+        final = round(min(100.0, final), 1)
         sl = "3" if final >= 67 else "2" if final >= 34 else "1"
 
         xai_explanation = _xai_text(data, final, boosts_list, lstm_score, rf_weight, lstm_weight)
-        xai_factors = _xai_factors(data, rf_score, boost, lstm_score, boosts_list, rf_weight, lstm_weight)
-
-        logger.info(
-            f"predict v4.7: rf={rf_score:.1f} rf_boosted={rf_boosted:.1f} "
-            f"lstm={f'{lstm_score:.1f}' if lstm_score is not None else 'N/A'} "
-            f"weights=RF{rf_weight:.2f}/LSTM{lstm_weight:.2f} "
-            f"boost={total_boost:.1f} factors={factor_count} final={final:.1f} label={sl}"
-        )
+        xai_factors = _xai_factors(data, rf_score, 0.0, lstm_score, boosts_list, rf_weight, lstm_weight)
 
         return {
             "severity": sl,
             "score": final,
             "rf_score": round(rf_score, 2),
-            "rf_boosted": round(rf_boosted, 2),
+            "rf_boosted": round(base_ensemble, 2),
             "lstm_score": round(lstm_score, 2) if lstm_score is not None else None,
             "model_used": model_used,
             "probabilities": proba,
             "xai_explanation": xai_explanation,
             "xai_factors": xai_factors,
-            "boost": round(boost, 2),
+            "boost": round(total_boost, 2),
             "season": {"name": season, "boost": seasonal_boost, "note": sdata["note"]},
             "lstm_weight": round(lstm_weight, 2),
             "rf_weight": round(rf_weight, 2),
