@@ -1,26 +1,29 @@
 /**
- * services/adaptiveHotspots.js — IntelliCrash v12.0
- * ─────────────────────────────────────────────────
- * Senior-grade adaptive hotspot engine. Fixes:
+ * services/adaptiveHotspots.js — IntelliCrash v13.0
+ * ─────────────────────────────────────────────────────────────────
+ * Robust adaptive hotspot engine built on PROVEN accident learning.
  *
- *  1. DEDUPLICATION  — same session can only contribute 1 report per grid
- *     cell per 30-minute window (prevents spam-clicking)
- *  2. FINE GRID      — 0.008° ≈ 888m (was 0.02°/2.2km — too coarse)
- *  3. TIME DECAY     — incidents older than 30 days lose weight exponentially
- *  4. THRESHOLD      — hotspot only when weighted score ≥ 15 (not raw count ≥ 3)
- *  5. MULTI-SOURCE   — differentiates community vs iRAD vs backend_seed weights
- *  6. COOLDOWN       — per-session debounce stored in sessionStorage
- *  7. CLEANUP        — stale zero-weight cells pruned on open
- *  8. NO SUPABASE KEY in client — sync goes through /api only
+ *  1. TIGHTER GRID    — 0.005° ≈ 555m (was 0.008°/888m) — finer spatial precision
+ *  2. HIGHER THRESHOLD — weighted score ≥ 20 to become a hotspot (was 15)
+ *  3. LONGER COOLDOWN  — 45 min per cell per session (was 30 min)
+ *  4. INCIDENT CAP     — max 30 incidents per cell (was 50) to bound memory
+ *  5. STALE PRUNING    — cells not updated in 60+ days are removed on open
+ *  6. RADIUS FORMULA   — getHotspotRadius() exports radius based on weighted_score
+ *  7. DEDUPLICATION    — same session can only contribute 1 report per cell per cooldown
+ *  8. TIME DECAY       — incidents older than 30 days lose weight exponentially
+ *  9. MULTI-SOURCE     — community vs iRAD vs backend_seed weights
+ * 10. NO SUPABASE KEY  — sync goes through /api only
  */
 
-const IDB_NAME    = "intellicrash_hotspots_v3"; // bump version to reset old bad data
-const IDB_STORE   = "learned";
-const IDB_VER     = 1;
-const GRID_DEG    = 0.008;          // ~888 m grid cell
-const DECAY_DAYS  = 30;             // half-life for old reports
-const MIN_WEIGHT  = 15;             // weighted score needed to become a hotspot
-const COOLDOWN_MS = 30 * 60 * 1000; // 30 min per cell per session
+const IDB_NAME      = "intellicrash_hotspots_v4"; // bumped — forces fresh start with new grid
+const IDB_STORE     = "learned";
+const IDB_VER       = 1;
+const GRID_DEG      = 0.005;           // ~555 m grid cell (finer precision)
+const DECAY_DAYS    = 30;              // half-life for old reports
+const MIN_WEIGHT    = 20;              // weighted score needed to become a hotspot
+const COOLDOWN_MS   = 45 * 60 * 1000; // 45 min per cell per session
+const MAX_INCIDENTS = 30;             // max incidents per cell
+const STALE_DAYS    = 60;             // cells with no update in 60+ days get pruned
 
 // ── IndexedDB helpers ─────────────────────────────────────────────
 
@@ -101,7 +104,8 @@ function incidentWeight(isoTimestamp, severity, fatal) {
   const ageMs  = Date.now() - new Date(isoTimestamp).getTime();
   const ageDays = ageMs / (1000 * 60 * 60 * 24);
   const decay  = Math.pow(0.5, ageDays / DECAY_DAYS);
-  return (sevW + fatalBonus) * decay;
+  // Floor weight at 0.01 so ancient incidents don't fully vanish and corrupt aggregates
+  return Math.max(0.01, (sevW + fatalBonus) * decay);
 }
 
 function recomputeWeightedScore(incidents) {
@@ -160,12 +164,12 @@ export async function reportIncident({
     const existing = await _idbGet(db, gk);
     const now      = new Date().toISOString();
 
-    // Accumulate incidents list (keep last 50 to bound storage)
+    // Accumulate incidents list (cap at MAX_INCIDENTS to bound storage)
     const prevIncidents = existing?.incidents ?? [];
     const newIncidents  = [
       ...prevIncidents,
       { ts: now, severity, fatal, source, description: description.slice(0, 120) },
-    ].slice(-50);
+    ].slice(-MAX_INCIDENTS);
 
     const weightedScore = recomputeWeightedScore(newIncidents);
     const isHotspot     = weightedScore >= MIN_WEIGHT;
@@ -215,13 +219,19 @@ export async function getLearnedHotspots({ confirmedOnly = false } = {}) {
     const db  = await _openIDB();
     let   all = await _idbGetAll(db);
 
-    // Prune stale cells with effectively zero weight
-    const toDelete = all.filter(r => recomputeWeightedScore(r.incidents ?? []) < 0.5);
-    for (const r of toDelete) {
-      await _idbDelete(db, r.grid_key);
-    }
+    // Prune cells with effectively zero weight (fully decayed)
+    const zeroWeight = all.filter(r => recomputeWeightedScore(r.incidents ?? []) < 0.5);
+    for (const r of zeroWeight) await _idbDelete(db, r.grid_key);
+    all = all.filter(r => !zeroWeight.includes(r));
 
-    all = all.filter(r => !toDelete.includes(r));
+    // Prune stale cells not updated in STALE_DAYS
+    const staleThresh = Date.now() - STALE_DAYS * 24 * 3600 * 1000;
+    const staleCells = all.filter(r => {
+      const lastTs = r.last_incident ? new Date(r.last_incident).getTime() : 0;
+      return lastTs < staleThresh && r.source !== "backend_seed";
+    });
+    for (const r of staleCells) await _idbDelete(db, r.grid_key);
+    all = all.filter(r => !staleCells.includes(r));
 
     // Recompute weights (decay may have changed since last write)
     all = all.map(r => ({
@@ -237,6 +247,16 @@ export async function getLearnedHotspots({ confirmedOnly = false } = {}) {
     console.error("[Hotspot] getLearnedHotspots error:", e);
     return [];
   }
+}
+
+/**
+ * Get the display radius in meters for a learned hotspot.
+ * Consistent formula used both by Navigation.jsx and this service.
+ * 150m base + 18m per weighted_score point, capped at 600m.
+ */
+export function getHotspotRadius(h) {
+  const ws = typeof h?.weighted_score === "number" && isFinite(h.weighted_score) ? h.weighted_score : MIN_WEIGHT;
+  return Math.min(600, Math.max(150, 150 + ws * 18));
 }
 
 /**

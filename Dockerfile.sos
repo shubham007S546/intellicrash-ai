@@ -1,0 +1,22 @@
+# ── IntelliCrash SOS Server ───────────────────────────────────────────
+FROM node:20-alpine
+LABEL maintainer="IntelliCrash <shubhamabhi004@gmail.com>"
+LABEL description="IntelliCrash SOS Node.js Server — Twilio + Gmail dispatch"
+LABEL version="2.0"
+
+WORKDIR /app
+
+# Copy dependency files
+COPY sos-server/package*.json ./
+RUN npm ci --only=production --prefer-offline
+
+# Copy source
+COPY sos-server/ ./
+
+ENV NODE_ENV=production
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:3001/health || exit 1
+
+CMD ["node", "server.js"]

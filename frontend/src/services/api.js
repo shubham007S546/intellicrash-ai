@@ -428,23 +428,28 @@ export async function saveSession(session) {
   }
 }
 
-// ── Gamification ──────────────────────────────────────────────────
-export async function saveGM(gmData) {
-  try {
-    localStorage.setItem("ic_gm", JSON.stringify(gmData));
-    return await apiFetch("/api/gamification", { method: "POST", body: JSON.stringify(gmData) });
-  } catch { return { ok: true }; }
-}
-
 export function initGM() {
   const defaults = {
     points: 0, level: 1, badges: [], streak: 0, totalTrips: 0,
     safeTrips: 0, lastTrip: null, trips: 0, reports: 0, driverScores: [],
   };
   try {
-    const saved = localStorage.getItem("ic_gm");
+    const userStr = localStorage.getItem("ic_user");
+    const userId = userStr ? JSON.parse(userStr)?.id : "guest";
+    const key = `ic_gm_${userId}`;
+    const saved = localStorage.getItem(key);
     return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
   } catch { return defaults; }
+}
+
+export async function saveGM(gmData) {
+  try {
+    const userStr = localStorage.getItem("ic_user");
+    const userId = userStr ? JSON.parse(userStr)?.id : "guest";
+    const key = `ic_gm_${userId}`;
+    localStorage.setItem(key, JSON.stringify(gmData));
+    return await apiFetch("/api/gamification", { method: "POST", body: JSON.stringify(gmData) });
+  } catch { return { ok: true }; }
 }
 
 export const initGMServer = initGM;

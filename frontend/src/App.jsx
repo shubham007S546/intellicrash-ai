@@ -1,43 +1,44 @@
 /**
- * App.jsx — IntelliCrash v5.1 FIXED
- *
- * FIXES vs v5.0:
- * ✅ ProtectedRoute — 5s timeout so it never hangs if Supabase is slow/down
- * ✅ ProtectedRoute — try/catch on supabase import + getSession call
- * ✅ ProtectedRoute — guest bypass via localStorage ic_guest=true
- * ✅ /login route — no longer wrapped in ProtectedRoute (was causing blank page)
+ * App.jsx — IntelliCrash v10.0
+ * ✅ Performance Optimized: React.lazy + Suspense for all secondary pages
+ * ✅ Premium Security: Authenticated routes for Rewards and Navigation
+ * ✅ Robust Account Isolation: Per-user gamification and reward state
  */
-import React from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Box, Typography } from "@mui/material";
 import {
   BrowserRouter, Routes, Route, Navigate,
   useNavigate, useLocation,
 } from "react-router-dom";
 import { createTheme, ThemeProvider, CssBaseline } from "@mui/material";
-import { useState, useEffect, useMemo } from "react";
 import { useTheme } from "./hooks/useTheme";
+import { supabase } from "./services/supabase";
 
 import Navbar            from "./components/Navbar.jsx";
 import ChatBotButton     from "./components/ChatBotButton.jsx";
-import FloatingSOS        from "./components/FloatingSOS.jsx";
+import FloatingSOS       from "./components/FloatingSOS.jsx";
+import GuestLoginPrompt  from "./components/GuestLoginPrompt.jsx";
 
+// Home is loaded eagerly for speed
 import Home              from "./pages/Home.jsx";
-import Navigation        from "./pages/Navigation.jsx";
-import Rewards           from "./pages/Rewards.jsx";
-import Bulletin          from "./pages/Bulletin.jsx";
-import SOS               from "./pages/SOS.jsx";
-import About             from "./pages/About.jsx";
-import AccidentDetail    from "./pages/AccidentDetail.jsx";
-import FamilyTrack       from "./pages/FamilyTrack.jsx";
-import UserLogin         from "./pages/UserLogin.jsx";
-import Admin             from "./pages/Admin.jsx";
-import AdminLogin        from "./pages/AdminLogin.jsx";
-import AdminRiskAnalysis from "./pages/AdminRiskAnalysis.jsx";
-import Dashboard         from "./pages/Dashboard.jsx";
-import XAI               from "./pages/XAI.jsx";
-import ChatBot           from "./pages/ChatBot.jsx";
 
-/* MUI theme generator function */
+// Lazy load heavy components for faster initial frame
+const Navigation        = React.lazy(() => import("./pages/Navigation.jsx"));
+const Rewards           = React.lazy(() => import("./pages/Rewards.jsx"));
+const Bulletin          = React.lazy(() => import("./pages/Bulletin.jsx"));
+const SOS               = React.lazy(() => import("./pages/SOS.jsx"));
+const About             = React.lazy(() => import("./pages/About.jsx"));
+const AccidentDetail    = React.lazy(() => import("./pages/AccidentDetail.jsx"));
+const FamilyTrack       = React.lazy(() => import("./pages/FamilyTrack.jsx"));
+const UserLogin         = React.lazy(() => import("./pages/UserLogin.jsx"));
+const Admin             = React.lazy(() => import("./pages/Admin.jsx"));
+const AdminLogin        = React.lazy(() => import("./pages/AdminLogin.jsx"));
+const AdminRiskAnalysis = React.lazy(() => import("./pages/AdminRiskAnalysis.jsx"));
+const Dashboard         = React.lazy(() => import("./pages/Dashboard.jsx"));
+const XAI               = React.lazy(() => import("./pages/XAI.jsx"));
+const ChatBot           = React.lazy(() => import("./pages/ChatBot.jsx"));
+
+/* ── MUI Theme ───────────────────────────────────────────────────────────── */
 const getMuiTheme = (mode) => createTheme({
   palette: {
     mode,
@@ -46,15 +47,15 @@ const getMuiTheme = (mode) => createTheme({
     error:      { main: "#ef4444" },
     warning:    { main: "#f59e0b" },
     success:    { main: "#22c55e" },
-    background: { 
-      default: mode === "light" ? "#fafafa" : "#0a0a0f", 
-      paper: mode === "light" ? "#ffffff" : "#1a1a1e" 
+    background: {
+      default: mode === "light" ? "#fafafa" : "#0a0a0f",
+      paper:   mode === "light" ? "#ffffff" : "#1a1a1e",
     },
-    text:       { 
-      primary: mode === "light" ? "#0a0a0f" : "#f5f5f5", 
-      secondary: mode === "light" ? "#6b6b7e" : "#9898a8" 
+    text: {
+      primary:   mode === "light" ? "#0a0a0f" : "#f5f5f5",
+      secondary: mode === "light" ? "#6b6b7e" : "#9898a8",
     },
-    divider:    mode === "light" ? "#e8e8f0" : "rgba(255,255,255,0.1)",
+    divider: mode === "light" ? "#e8e8f0" : "rgba(255,255,255,0.1)",
   },
   typography: {
     fontFamily: "'Inter', 'DM Sans', sans-serif",
@@ -66,7 +67,6 @@ const getMuiTheme = (mode) => createTheme({
     h6: { fontFamily: "'Outfit', sans-serif", fontWeight: 700 },
   },
   shape: { borderRadius: 16 },
-
   components: {
     MuiPaper:  { styleOverrides: { root: { backgroundImage: "none" } } },
     MuiButton: { styleOverrides: { root: { textTransform: "none", fontWeight: 700 } } },
@@ -81,17 +81,11 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.error)
       return (
-        <Box sx={{ p: 4, textAlign: "center", background: "var(--bg-primary)", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <Typography variant="h5" sx={{ color: "#ef4444", mb: 2, fontFamily: "'Clash Display',sans-serif" }}>
-            Something went wrong
-          </Typography>
-          <Typography sx={{ color: "#6b6b7e", mb: 3, maxWidth: 420 }}>
-            {this.state.error.message}
-          </Typography>
-          <button
-            onClick={() => this.setState({ error: null })}
-            style={{ padding: "12px 28px", borderRadius: 36, background: "linear-gradient(135deg,#ff4d00,#ff8c42)", color: "#fff", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "'Satoshi',sans-serif", boxShadow: "0 4px 14px rgba(255,77,0,.3)" }}
-          >
+        <Box sx={{ p:4, textAlign:"center", minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+          <Typography variant="h5" sx={{ color:"#ef4444", mb:2 }}>Something went wrong</Typography>
+          <Typography sx={{ color:"#6b6b7e", mb:3, maxWidth:420 }}>{this.state.error.message}</Typography>
+          <button onClick={() => this.setState({ error: null })}
+            style={{ padding:"12px 28px", borderRadius:36, background:"linear-gradient(135deg,#ff4d00,#ff8c42)", color:"#fff", border:"none", cursor:"pointer", fontWeight:700 }}>
             Try Again
           </button>
         </Box>
@@ -108,108 +102,112 @@ function OfflineBanner() {
     const off = () => setOffline(true);
     window.addEventListener("online",  on);
     window.addEventListener("offline", off);
-    return () => {
-      window.removeEventListener("online",  on);
-      window.removeEventListener("offline", off);
-    };
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
   if (!offline) return null;
   return (
-    <Box sx={{ background: "#fef2f2", borderBottom: "1px solid #fecaca", p: 0.8, textAlign: "center" }}>
-      <Typography sx={{ fontSize: 12, color: "#dc2626", fontWeight: 600 }}>
-        📵 You are offline — map features may be limited
-      </Typography>
+    <Box sx={{ background:"#fef2f2", borderBottom:"1px solid #fecaca", p:0.8, textAlign:"center" }}>
+      <Typography sx={{ fontSize:12, color:"#dc2626", fontWeight:600 }}>📵 You are offline — map features may be limited</Typography>
     </Box>
   );
 }
 
-/* ── Protected Route — FIXED ─────────────────────────────────────────────── */
+/* ── Protected Route — for regular users ────────────────────────────────── */
 function ProtectedRoute({ children }) {
-  const [authState, setAuthState] = useState("loading"); // "loading" | "authed" | "unauthed"
-  const navigate  = useNavigate();
-  const location  = useLocation();
+  const [authState, setAuthState] = useState("loading");
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     let mounted = true;
-
-    // ── Guest bypass ────────────────────────────────────────────
-    if (localStorage.getItem("ic_guest") === "true") {
-      setAuthState("authed");
-      return;
-    }
-
-    // ── Hard 5-second timeout — never hang forever ──────────────
+    if (localStorage.getItem("ic_guest") === "true") { setAuthState("authed"); return; }
     const timeoutId = setTimeout(() => {
       if (mounted && authState === "loading") {
-        console.warn("[ProtectedRoute] Supabase auth check timed out — redirecting to /login");
         setAuthState("unauthed");
         navigate("/login", { replace: true, state: { from: location.pathname } });
       }
-    }, 5000);
-
+    }, 2000);
     const checkAuth = async () => {
       try {
-        // Dynamic import so a Supabase crash doesn't break the whole app
-        const { supabase } = await import("./services/supabase");
         const { data, error } = await supabase.auth.getSession();
-
         clearTimeout(timeoutId);
         if (!mounted) return;
-
-        if (error) {
-          console.warn("[ProtectedRoute] getSession error:", error.message);
+        if (error || !data?.session?.user) {
           setAuthState("unauthed");
           navigate("/login", { replace: true, state: { from: location.pathname } });
-          return;
-        }
-
-        if (data?.session?.user) {
-          setAuthState("authed");
         } else {
-          setAuthState("unauthed");
-          navigate("/login", { replace: true, state: { from: location.pathname } });
+          setAuthState("authed");
         }
       } catch (e) {
         clearTimeout(timeoutId);
-        console.warn("[ProtectedRoute] Auth check failed:", e.message);
         if (!mounted) return;
         setAuthState("unauthed");
         navigate("/login", { replace: true, state: { from: location.pathname } });
       }
     };
-
     checkAuth();
-
-    return () => {
-      mounted = false;
-      clearTimeout(timeoutId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { mounted = false; clearTimeout(timeoutId); };
   }, [navigate, location.pathname]);
 
-  // ── Loading spinner ─────────────────────────────────────────────
-  if (authState === "loading") {
-    return (
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", flexDirection: "column", gap: 2 }}>
-        <div
-          style={{
-            width: 48, height: 48, borderRadius: "50%",
-            background: "linear-gradient(135deg,#ff4d00,#ff8c42)",
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22,
-          }}
-        >
-          🛡️
-        </div>
-        <Typography sx={{ color: "#6b6b7e", fontSize: 14 }}>Verifying access…</Typography>
-      </Box>
-    );
-  }
-
+  if (authState === "loading") return (
+    <Box sx={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"60vh", flexDirection:"column", gap:2 }}>
+      <div style={{ width:48, height:48, borderRadius:"50%", background:"linear-gradient(135deg,#ff4d00,#ff8c42)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>🛡️</div>
+      <Typography sx={{ color:"#6b6b7e", fontSize:14 }}>Verifying access…</Typography>
+    </Box>
+  );
   if (authState === "unauthed") return null;
   return children;
 }
 
-import GuestLoginPrompt from "./components/GuestLoginPrompt.jsx";
+/* ── Admin Route — Requires ic_admin_session flag ────────────────────────── */
+const ADMIN_EMAILS = ["shubhamabhi004@gmail.com"];
+
+function AdminRoute({ children }) {
+  const [state, setState] = useState("loading");
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    let mounted = true;
+    const timeout = setTimeout(() => {
+      if (mounted && state === "loading") {
+        setState("denied");
+        navigate("/admin-login", { replace: true, state: { from: location.pathname } });
+      }
+    }, 2000);
+    const check = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        clearTimeout(timeout);
+        if (!mounted) return;
+        const user = data?.session?.user;
+        const hasFlag = sessionStorage.getItem("ic_admin_session") === "1";
+        if (user && ADMIN_EMAILS.includes(user.email) && hasFlag) {
+          setState("ok");
+        } else {
+          setState("denied");
+          navigate("/admin-login", { replace: true, state: { from: location.pathname } });
+        }
+      } catch {
+        clearTimeout(timeout);
+        if (!mounted) return;
+        setState("denied");
+        navigate("/admin-login", { replace: true });
+      }
+    };
+    check();
+    return () => { mounted = false; clearTimeout(timeout); };
+  }, [navigate, location.pathname]);
+
+  if (state === "loading") return (
+    <Box sx={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"60vh", flexDirection:"column", gap:2 }}>
+      <div style={{ width:48, height:48, borderRadius:"50%", background:"linear-gradient(135deg,#1d4ed8,#2563eb)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>🛡️</div>
+      <Typography sx={{ color:"#6b6b7e", fontSize:14 }}>Verifying admin access…</Typography>
+    </Box>
+  );
+  if (state === "denied") return null;
+  return children;
+}
 
 /* ── App ─────────────────────────────────────────────────────────────────── */
 export default function App() {
@@ -223,47 +221,43 @@ export default function App() {
         <OfflineBanner />
         <Navbar />
         <ErrorBoundary>
-          <Box sx={{ minHeight: "100vh", background: "var(--bg-primary)", transition: "background 0.3s ease" }}>
-            <Routes>
-              {/* Public routes */}
-              <Route path="/"             element={<Home />} />
-              <Route path="/home"         element={<Home />} />
-              <Route path="/login"        element={<UserLogin />} />
-              <Route path="/rewards"      element={<Rewards />} />
-              <Route path="/bulletin"     element={<Bulletin />} />
-              <Route path="/sos"          element={<SOS />} />
-              <Route path="/about"        element={<About />} />
-              <Route path="/chatbot"      element={<ChatBot />} />
-              <Route path="/accident/:id" element={<AccidentDetail />} />
-              <Route path="/track/:shareId" element={<FamilyTrack />} />
-              <Route path="/admin"               element={<Admin />} />
-              <Route path="/admin-login"         element={<AdminLogin />} />
-              <Route path="/admin/risk-analysis" element={<AdminRiskAnalysis />} />
-              <Route path="/xai"          element={<XAI />} />
+          <Box sx={{ minHeight:"calc(100vh - 70px)", display:"flex", flexDirection:"column", background:"var(--bg-primary)", transition:"background 0.3s ease" }}>
+            <React.Suspense fallback={
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "80vh", flexDirection: "column", gap: 2 }}>
+                <Typography sx={{ fontSize: "14px", fontWeight: 700, color: "#64748b" }}>Loading Intelligence...</Typography>
+              </Box>
+            }>
+              <Routes>
+                {/* ── Public ──────────────────────────────────────── */}
+                <Route path="/"             element={<Home />} />
+                <Route path="/home"         element={<Home />} />
+                <Route path="/login"        element={<UserLogin />} />
+                <Route path="/bulletin"     element={<Bulletin />} />
+                <Route path="/sos"          element={<SOS />} />
+                <Route path="/about"        element={<About />} />
+                <Route path="/chatbot"      element={<ChatBot />} />
+                <Route path="/xai"          element={<XAI />} />
+                <Route path="/accident/:id" element={<AccidentDetail />} />
+                <Route path="/track/:shareId" element={<FamilyTrack />} />
 
-              {/* Protected routes — require login */}
-              <Route
-                path="/navigation"
-                element={
-                  <ProtectedRoute>
-                    <Navigation />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
+                {/* ── Protected Routes (User Auth Required) ────────── */}
+                <Route path="/navigation"   element={<ProtectedRoute><Navigation /></ProtectedRoute>} />
+                <Route path="/rewards"      element={<ProtectedRoute><Rewards /></ProtectedRoute>} />
+                <Route path="/dashboard"    element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
 
-              {/* Redirects */}
-              <Route path="/trips"   element={<Navigate to="/rewards"           replace />} />
-              <Route path="/predict" element={<Navigate to="/admin/risk-analysis" replace />} />
-              <Route path="*"        element={<Navigate to="/"                  replace />} />
-            </Routes>
+                {/* ── Admin Login (Public) ───────────────────────── */}
+                <Route path="/admin-login"  element={<AdminLogin />} />
+
+                {/* ── Admin-Only Routes (AdminRoute guard) ────────── */}
+                <Route path="/admin"               element={<AdminRoute><Admin /></AdminRoute>} />
+                <Route path="/admin/risk-analysis" element={<AdminRoute><AdminRiskAnalysis /></AdminRoute>} />
+
+                {/* ── Redirects ────────────────────────────────────── */}
+                <Route path="/trips"   element={<Navigate to="/rewards" replace />} />
+                <Route path="/predict" element={<Navigate to="/admin/risk-analysis" replace />} />
+                <Route path="*"        element={<Navigate to="/" replace />} />
+              </Routes>
+            </React.Suspense>
           </Box>
         </ErrorBoundary>
         <ChatBotButton />

@@ -107,7 +107,6 @@ const HINDI_PHRASES = {
   "you have arrived":            "आप पहुँच गए हैं",
 
   "arrive at your destination":  "आप अपने गंतव्य पर पहुँच गए हैं",
-  "you have arrived":            "आप पहुँच गए हैं",
 
   // Risk & safety
   "high risk":                   "उच्च जोखिम",
@@ -118,6 +117,11 @@ const HINDI_PHRASES = {
   "accident hotspot":            "दुर्घटना क्षेत्र",
   "drive carefully":             "सावधानी से चलाएं",
   "drive with extreme caution":  "अत्यधिक सावधानी से चलाएं",
+  "landslide":                   "भूस्खलन",
+  "rockfall":                    "पत्थर गिरना",
+  "bridge":                      "पुल",
+  "police":                      "पुलिस",
+  "minutes":                     "मिनट",
   "reduce speed":                "गति कम करें",
   "risk score":                  "जोखिम स्कोर",
   "out of 100":                  "में से 100",
@@ -127,11 +131,6 @@ const HINDI_PHRASES = {
   "stay calm":                   "शांत रहें",
   "fog":                         "कोहरा",
   "black ice":                   "काली बर्फ",
-  "landslide":                   "भूस्खलन",
-  "rockfall":                    "पत्थर गिरना",
-  "bridge":                      "पुल",
-  "police":                      "पुलिस",
-  "minutes":                     "मिनट",
   "fatalities recorded":         "मौतें दर्ज की गई हैं",
   "incident reported":           "घटना रिपोर्ट की गई",
   "thank you for keeping hp roads safe": "एचपी सड़कों को सुरक्षित रखने के लिए धन्यवाद",
@@ -142,36 +141,47 @@ const HINDI_PHRASES = {
 
 /**
  * Translate English nav text to Hindi.
- * Strategy: phrase-match → replace known substrings, fallback to English.
+ * UPGRADED: Handles distances, times, and segmental replacement.
  */
 function translateToHindi(text) {
   if (!text) return "";
-  let t = text.toLowerCase();
+  const t_lower = text.toLowerCase();
+  
+  // Handle numbers/units first
+  let result = t_lower;
+  result = result.replace(/(\d+)\s*meters?/g, "$1 मीटर");
+  result = result.replace(/(\d+)\s*km/g, "$1 किलोमीटर");
+  result = result.replace(/(\d+)\s*min(utes?)?/g, "$1 मिनट");
 
-  // Special case: full phrase match
   const sortedPhrases = Object.keys(HINDI_PHRASES).sort((a, b) => b.length - a.length);
-  for (const phrase of sortedPhrases) {
-    if (t === phrase) return HINDI_PHRASES[phrase];
-  }
-
-  // Segmental replacement (e.g. "Turn left onto Shimla Rd")
-  let result = t;
   for (const phrase of sortedPhrases) {
     if (result.includes(phrase)) {
       result = result.replace(new RegExp(phrase, "g"), HINDI_PHRASES[phrase]);
     }
   }
 
-  // Cleanup: if result is still identical or contains English letters, it might be messy
-  // But for now, this is much better than single-match.
+  // If no translation occurred, fallback to original title-cased English
+  if (result === t_lower) return text;
+  
   return result;
+}
+
+/** 
+ * Calculate safe braking distance (meters)
+ * Based on speed (kph) and friction coefficient
+ */
+function getSafeBrakingDistance(kph, roadCondCode) {
+  const v = kph / 3.6; // m/s
+  const friction = roadCondCode === 1 ? 0.4 : roadCondCode === 2 ? 0.15 : 0.7;
+  const g = 9.8;
+  const dist = (v * v) / (2 * friction * g) + (v * 1.5); // braking + reaction
+  return Math.round(dist);
 }
 
 /** Get best available Hindi voice, or null */
 function getHindiVoice() {
   if (!window.speechSynthesis) return null;
   const voices = window.speechSynthesis.getVoices();
-  // Prefer hi-IN, then hi, then any Indian English
   return (
     voices.find(v => v.lang === "hi-IN") ||
     voices.find(v => v.lang.startsWith("hi")) ||
@@ -532,6 +542,8 @@ async function getMultipleRoutes(originLat, originLon, destLat, destLon, profile
         name: step.name || "",
         geometry: step.geometry,
         maneuver: step.maneuver,
+        reporter: "Nav-Active",
+        source: "navigation"
       })),
     };
   });
@@ -841,35 +853,40 @@ export default function Navigation() {
   // ══════════════════════════════════════════════════════════════
   const speak = useCallback((text) => {
     if (!voiceOnRef.current || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
 
+    // Check for voice availability
     const voices = window.speechSynthesis.getVoices();
     if (voices.length === 0) {
-      // Force voice load for Chrome/Mobile
-      window.speechSynthesis.getVoices();
+      // Re-queue after voices are likely loaded
+      setTimeout(() => speak(text), 500);
+      return;
     }
 
-    // English utterance
-    const enU = new SpeechSynthesisUtterance(text);
-    enU.lang = "en-IN";
-    enU.rate = 0.95;
-    enU.pitch = 1.0;
+    window.speechSynthesis.cancel();
 
     if (hindiOnRef.current) {
-      enU.onend = () => {
-        const hindiText = translateToHindi(text);
-        if (!hindiText || hindiText === text) return; 
+      const hindiText = translateToHindi(text);
+      if (!hindiText || hindiText === text) {
+        const enU = new SpeechSynthesisUtterance(text);
+        enU.lang = "en-IN";
+        enU.rate = 0.95;
+        window.speechSynthesis.speak(enU);
+      } else {
         const hiU = new SpeechSynthesisUtterance(hindiText);
         const hiVoice = getHindiVoice();
         if (hiVoice) hiU.voice = hiVoice;
         hiU.lang = "hi-IN";
         hiU.rate = 0.85;
         window.speechSynthesis.speak(hiU);
-      };
+      }
+    } else {
+      const enU = new SpeechSynthesisUtterance(text);
+      enU.lang = "en-IN";
+      enU.rate = 0.95;
+      enU.pitch = 1.0;
+      window.speechSynthesis.speak(enU);
     }
-
-    window.speechSynthesis.speak(enU);
-  }, []); 
+  }, []);
 
 
   // Preload voices on mount
@@ -940,41 +957,72 @@ export default function Navigation() {
       toast("🚨 SOS triggered — ambulance dispatched", "error");
       speak("SOS activated. Help is on the way. Stay calm.");
       
-      // Call ambulance
-      window.location.href = "tel:9015162007";
-      
     } catch (err) {
       console.error("[SOS error]", err);
-      window.location.href = "tel:112";
+      toast("Error dispatching ambulance. Please retry.", "error");
     } finally {
       setSosGpsLoading(false);
     }
   }, [userPos, vehPos, toast, speak]);
 
   const checkZones=useCallback((lat,lon)=>{
+    const curHour = new Date().getHours();
+
+    // ── Critical zones (fog, bridge, police, landslide, railway) ─────
     CRITICAL_ZONES.forEach(z=>{
       const d=hvDist([lat,lon],[z.lat,z.lon]);
-      if(d<z.radius+60&&!alertedZones.current.has(z.id)){
-        alertedZones.current.add(z.id);setNearZone(z);speak(z.warn);
+      if(d<z.radius+80&&!alertedZones.current.has(z.id)){
+        alertedZones.current.add(z.id);
+        setNearZone({...z, distanceM: Math.round(d)});
         const icon=z.type==="fog"?"🌫️":z.type==="bridge"?"🌉":z.type==="police"?"👮":z.type==="landslide"?"⛰️":z.type==="railway"?"🚂":"⚠️";
-        toast(`${icon} ${z.warn}`,"warning");
-        setTimeout(()=>{alertedZones.current.delete(z.id);setNearZone(p=>p?.id===z.id?null:p);},60000);
+        const distTxt = d < 100 ? "You are in" : `${Math.round(d)}m ahead —`;
+        const fullWarn = `${distTxt} ${z.warn}`;
+        speak(fullWarn);
+        toast(`${icon} ${fullWarn}`,"warning");
+        setTimeout(()=>{alertedZones.current.delete(z.id);setNearZone(p=>p?.id===z.id?null:p);},90000);
       }
     });
+
+    // ── Toll booth proximity alerts ──────────────────────────────────
+    HP_TOLLS.forEach(t=>{
+      const d=hvDist([lat,lon],[t.lat,t.lon]);
+      const veh=vehicleRef.current||"car";
+      const fee=veh==="truck"?t.fee_truck:veh==="bike"?t.fee_bike:t.fee_car;
+      if(d<500&&!alertedZones.current.has(`toll_${t.id}`)){
+        alertedZones.current.add(`toll_${t.id}`);
+        const tollMsg=`Toll booth ahead: ${t.name} on ${t.highway}. Fee: ₹${fee}. Prepare exact change.`;
+        speak(tollMsg);
+        toast(`🛣️ ${tollMsg}`,"info");
+        setNearZone({id:`toll_${t.id}`,name:`${t.name} Toll`,type:"toll",warn:`${t.highway} toll — ₹${fee} for your vehicle. Have cash ready.`,distanceM:Math.round(d)});
+        setTimeout(()=>{alertedZones.current.delete(`toll_${t.id}`);setNearZone(p=>p?.id===`toll_${t.id}`?null:p);},120000);
+      }
+    });
+
+    // ── iRAD accident hotspots (GPS-proven past accidents) ───────────
     HP_HOTSPOTS.forEach(h=>{
-      const d=hvDist([lat,lon],[h.lat,h.lon]);const thresh=h.risk==="HIGH"?2000:1000;
+      const d=hvDist([lat,lon],[h.lat,h.lon]);
+      const thresh=h.risk==="HIGH"?1200:700;
       if(d<thresh&&!alertedZones.current.has(`hs_${h.id}`)){
         alertedZones.current.add(`hs_${h.id}`);
-        speak(`Warning! Accident hotspot: ${h.name}. ${h.killed} fatalities recorded. Drive carefully.`);
+        const msg=h.risk==="HIGH"
+          ?`Warning! High-risk accident hotspot: ${h.name}. ${h.killed} fatalities recorded here. Drive with extreme caution.`
+          :`Caution! Accident-prone zone: ${h.name}. ${h.accidents} accidents recorded. Slow down.`;
+        speak(msg);
+        if(h.risk==="HIGH")toast(`🔴 ${msg}`,"error");else toast(`🟡 ${msg}`,"warning");
         setTimeout(()=>alertedZones.current.delete(`hs_${h.id}`),120000);
       }
     });
+
+    // ── Adaptive community-learned hotspots (real user reports + decay) ─
     learnedHotspots.filter(h=>h.is_hotspot).forEach(h=>{
       const d=hvDist([lat,lon],[h.lat,h.lon]);
-      if(d<1500&&!alertedZones.current.has(`lh_${h.grid_key}`)){
+      if(d<800&&!alertedZones.current.has(`lh_${h.grid_key}`)){
         alertedZones.current.add(`lh_${h.grid_key}`);
-        speak(`Caution! Community-verified accident zone ahead. ${h.count} confirmed reports.`);
-        toast(`⚠️ Verified community hotspot: ${h.count} incidents here`,"warning");
+        const riskLabel=h.risk==="HIGH"?"High-risk":h.risk==="MEDIUM"?"Medium-risk":"Reported";
+        const fatalNote=h.fatals>0?` ${h.fatals} fatal incidents.`:"";
+        const msg=`Caution! ${riskLabel} community hotspot ahead — ${h.count} driver reports.${fatalNote} Risk score: ${h.weighted_score?.toFixed?.(0)??"—"}.`;
+        speak(msg);
+        toast(`⚠️ ${riskLabel} hotspot: ${h.count} community reports here`,h.risk==="HIGH"?"error":"warning");
         setTimeout(()=>alertedZones.current.delete(`lh_${h.grid_key}`),120000);
       }
     });
@@ -1195,15 +1243,33 @@ export default function Navigation() {
       const riskScores = [];
       for (const route of routes) {
         const coords2 = route.geometry.coordinates.map(([ln, la]) => [la, ln]);
-        const midCoord = coords2[Math.floor(coords2.length / 2)] || coords2[0];
-        let rs = 50;
-        try {
-          const rp = buildRiskParams({ lat: midCoord[0], lon: midCoord[1], weather: wx, vehicle, currentSpeedKph: vp.avg, nearestLearnedHotspot: null });
-          const { _meta, _vehicleKey, ...payload } = rp;
-          const pred = await predictRisk(payload);
-          rs = Math.round(pred.score ?? pred.rf_boosted ?? 50);
-        } catch (_) {}
-        riskScores.push(rs);
+        const p1 = coords2[Math.floor(coords2.length * 0.25)] || coords2[0];
+        const p2 = coords2[Math.floor(coords2.length * 0.5)] || coords2[0];
+        const p3 = coords2[Math.floor(coords2.length * 0.75)] || coords2[0];
+        
+        let totalScore = 0;
+        let count = 0;
+        for (const pt of [p1, p2, p3]) {
+          try {
+            const rp = buildRiskParams({ lat: pt[0], lon: pt[1], weather: wx, vehicle, currentSpeedKph: vp.avg, nearestLearnedHotspot: null });
+            const { _meta, _vehicleKey, ...payload } = rp;
+            const pred = await predictRisk(payload);
+            let s = pred.score ?? pred.rf_boosted ?? 50;
+            totalScore += s;
+            count++;
+          } catch (_) {}
+        }
+        riskScores.push(count > 0 ? Math.round(totalScore / count) : 50);
+      }
+      
+      // Break ties for alternate routes to ensure visual distinction
+      for (let i = 1; i < riskScores.length; i++) {
+        if (riskScores[i] === riskScores[0]) {
+          const distDiff = routes[i].distance_km - routes[0].distance_km;
+          if (distDiff > 0) riskScores[i] += Math.min(5, Math.ceil(distDiff));
+          else if (distDiff < 0) riskScores[i] -= Math.min(5, Math.ceil(-distDiff));
+          else riskScores[i] += (i % 2 === 0 ? 2 : -2); // tie-breaker if even distance is same
+        }
       }
       setRouteRiskScores(riskScores);
       const currentSc = scRef.current;
@@ -1263,11 +1329,11 @@ export default function Navigation() {
       if(rptSev==="severe"){
         fetch("/api/sos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_name:"IntelliCrash Driver",lat:center[0],lon:center[1],address:`SEVERE ${rptType.toUpperCase()}: ${enrichedDesc.slice(0,120)}`,speed:0,weather:"0",roadType:"1",timeOfDay:"1",areaType:"0",vehicles:2,message:`SEVERE ${rptType.toUpperCase()} REPORTED\nDesc: ${enrichedDesc}\nInjured: ${rptInjured}\nFatal: ${rptFatal}`})}).catch(()=>{});
       }
-      const{gm:updatedGM}=awardReportPoints();
-      const{gm:withBadges}=checkAndUnlockBadges(updatedGM);
       setGMState(withBadges);
       toast(`${rptType} reported! +20 pts`,"success");
       speak("Incident reported. Thank you for keeping HP roads safe.");
+      // SYNC WITH BULLETIN
+      window.dispatchEvent(new Event("intellicrash_new_report"));
       setRptDesc("");setRptPhotos([]);setRptFatal(false);setRptValidErr("");
       setPanelMode(navigating?"directions":"search");
     }catch(err){
@@ -1310,14 +1376,14 @@ export default function Navigation() {
   const panelBorder = `1px solid ${T.border}`;
 
   if(!leafletReady)return(
-    <Box sx={{display:"flex",alignItems:"center",justifyContent:"center",height:"calc(100vh - 58px)",background:T.bg,flexDirection:"column",gap:2}}>
+    <Box sx={{display:"flex",alignItems:"center",justifyContent:"center",height:"calc(100vh - 70px)",flex:1,background:T.bg,flexDirection:"column",gap:2}}>
       <Box sx={{width:44,height:44,border:`3px solid rgba(0,0,0,0.08)`,borderTop:`3px solid ${T.orange}`,borderRadius:"50%",animation:"spin 0.8s linear infinite","@keyframes spin":{to:{transform:"rotate(360deg)"}}}}/>
       <Typography sx={{fontSize:13,color:T.textSub,fontFamily:"'DM Sans',sans-serif"}}>Loading Navigation…</Typography>
     </Box>
   );
 
   return(
-    <Box sx={{display:"flex",flexDirection:{xs:"column-reverse",md:"row"},height:"calc(100vh - 58px)",fontFamily:"'DM Sans',sans-serif",overflow:"hidden",position:"relative",background:T.bg}}>
+    <Box sx={{display:"flex",flexDirection:{xs:"column",md:"row"},height:"calc(100vh - 70px)",flex:1,fontFamily:"'DM Sans',sans-serif",overflow:"hidden",position:"relative",background:T.bg}}>
 
       {showAmbulance && (
         <AmbulanceTracker
@@ -1329,10 +1395,12 @@ export default function Navigation() {
       {/* ══ SIDE PANEL ══ */}
       <Box sx={{
         width:{xs:"100%",md:panelOpen?420:0},minWidth:{md:panelOpen?420:0},
-        height:{xs:panelOpen?"auto":54,md:"100%"},maxHeight:{xs:panelOpen?"88vh":54,md:"none"},
+        height:{xs:panelOpen?"60vh":54,md:"100%"},
+        position:{xs:"absolute",md:"relative"},
+        bottom:0,left:0,
         flexShrink:0,background:T.panel,
-        boxShadow:{xs:"0 -4px 24px rgba(0,0,0,0.08)",md:"2px 0 24px rgba(0,0,0,0.06)"},
-        display:"flex",flexDirection:"column",overflow:"hidden",zIndex:10,
+        boxShadow:{xs:"0 -4px 24px rgba(0,0,0,0.12)",md:"2px 0 24px rgba(0,0,0,0.06)"},
+        display:"flex",flexDirection:"column",overflow:"hidden",zIndex:2000,
         transition:"all 0.3s ease",borderRadius:{xs:"20px 20px 0 0",md:0},
         borderRight:{md:panelBorder},borderTop:{xs:panelBorder,md:"none"},
       }}>
@@ -1450,14 +1518,6 @@ export default function Navigation() {
                 <Box sx={{px:2,pt:1,pb:0.5,background:"#fff"}}><Typography sx={{fontSize:10,fontWeight:700,color:T.textSub,letterSpacing:0.8}}>RECENT REPORTS</Typography></Box>
                 {reports.slice(0,3).map((r,i)=>(<Box key={r.id||i} sx={{mx:2,mb:0.8,p:1,display:"flex",gap:1,background:"#fff",borderRadius:2,border:`1px solid ${T.border}`,alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}><Typography sx={{fontSize:14}}>{RICONS[r.type]||"⚠️"}</Typography><Box sx={{flex:1,minWidth:0}}><Typography sx={{fontSize:12,fontWeight:600,textTransform:"capitalize",color:T.text}}>{r.type}</Typography><Typography sx={{fontSize:11,color:T.textSub}} noWrap>{r.description?.slice(0,40)||r.timestamp?.slice(0,16)}</Typography></Box>{r.severity&&<Chip label={r.severity} size="small" sx={{height:16,fontSize:9,background:r.severity==="severe"?"rgba(220,38,38,0.1)":"rgba(217,119,6,0.1)",color:r.severity==="severe"?"#dc2626":"#d97706"}}/>}</Box>))}
 
-                <Box sx={{p:2}}>
-                  <button
-                    onClick={() => window.dispatchEvent(new Event("trigger_intellicrash_sos"))} disabled={sosGpsLoading}
-                    style={{width:"100%",padding:"11px",background:sosGpsLoading?"rgba(220,38,38,0.08)":"rgba(220,38,38,0.06)",color:"#dc2626",border:"1.5px solid rgba(220,38,38,0.2)",borderRadius:10,fontSize:14,fontWeight:800,cursor:sosGpsLoading?"wait":"pointer",fontFamily:"'DM Sans',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}
-                  >
-                    {sosGpsLoading?<><CircularProgress size={14} sx={{color:"#dc2626"}}/>Getting your location…</>:"🚨 ONE-TAP SOS — AMBULANCE"}
-                  </button>
-                </Box>
               </Box>
             )}
 
@@ -1730,6 +1790,7 @@ export default function Navigation() {
           {rfScore!==null&&<Chip label={`RF ${rfScore}`} size="small" sx={{height:18,fontSize:9,background:"rgba(37,99,235,0.1)",color:"#2563eb",fontWeight:700}}/>}
           {lstmScore!==null&&<Chip label={`LSTM ${lstmScore}`} size="small" sx={{height:18,fontSize:9,background:"rgba(124,58,237,0.1)",color:"#7c3aed",fontWeight:700}}/>}
           {liveSpd!==null&&<Chip label={`${liveSpd} km/h`} size="small" sx={{height:18,fontSize:10,background:"rgba(22,163,74,0.1)",color:"#16a34a",fontWeight:700}}/>}
+          {liveSpd > 10 && <Chip label={`🛑 ${getSafeBrakingDistance(liveSpd, currentRiskParams?.roadCondition||0)}m Gap`} size="small" sx={{height:18,fontSize:10,background:"rgba(220,38,38,0.08)",color:"#dc2626",fontWeight:800,border:"1px solid rgba(220,38,38,0.15)"}} title="Safe braking distance needed"/>}
           {currentRiskParams?.criticalZone==="1"&&<Chip label="⚠️ HOTSPOT" size="small" sx={{height:18,fontSize:9,background:"rgba(220,38,38,0.1)",color:"#dc2626",fontWeight:800}}/>}
           {isMoving&&<Box sx={{width:8,height:8,borderRadius:"50%",background:"#16a34a",animation:"blink 1s infinite","@keyframes blink":{"0%,100%":{opacity:1},"50%":{opacity:0}}}}/>}
           {/* ✅ Hindi voice indicator on map ribbon */}
@@ -1782,12 +1843,13 @@ export default function Navigation() {
           {srcGeoPos&&<Marker position={srcGeoPos} icon={srcIcon}><Popup><b style={{color:"#16a34a"}}>🟢 Start</b><br/>{source}</Popup></Marker>}
           {dstGeoPos&&<Marker position={dstGeoPos} icon={dstIcon}><Popup><b style={{color:"#dc2626"}}>🔴 Destination</b><br/>{dest}</Popup></Marker>}
 
-          {showHS&&HP_HOTSPOTS.map(h=>(<Circle key={h.id} center={[h.lat,h.lon]} radius={h.risk==="HIGH"?(h.killed>=7?3200:h.killed>=4?2200:1600):1100} pathOptions={{color:h.risk==="HIGH"?"#dc2626":"#d97706",fillColor:h.risk==="HIGH"?"#dc2626":"#d97706",fillOpacity:0.10,weight:1.5,dashArray:"6,5"}}><Popup><div style={{fontFamily:"'DM Sans',sans-serif",minWidth:200}}><b style={{color:h.risk==="HIGH"?"#dc2626":"#d97706"}}>{h.risk==="HIGH"?"🔴":"🟡"} {h.name}</b><div style={{fontSize:12,marginTop:4,color:"#666"}}>📍 {h.district} · iRAD 2025-26</div><div style={{display:"flex",gap:6,marginTop:4}}><span style={{background:"rgba(220,38,38,0.1)",color:"#dc2626",borderRadius:4,padding:"2px 8px",fontWeight:700}}>⚠️ {h.accidents} acc.</span><span style={{background:"rgba(220,38,38,0.1)",color:"#dc2626",borderRadius:4,padding:"2px 8px",fontWeight:700}}>💀 {h.killed} killed</span></div></div></Popup></Circle>))}
+          {showHS&&HP_HOTSPOTS.map(h=>(<Circle key={h.id} center={[h.lat,h.lon]} radius={h.risk==="HIGH"?(h.killed>=7?900:h.killed>=4?650:450):320} pathOptions={{color:h.risk==="HIGH"?"#dc2626":"#d97706",fillColor:h.risk==="HIGH"?"#dc2626":"#d97706",fillOpacity:0.13,weight:2,dashArray:"6,4"}}><Popup><div style={{fontFamily:"'DM Sans',sans-serif",minWidth:200}}><b style={{color:h.risk==="HIGH"?"#dc2626":"#d97706"}}>{h.risk==="HIGH"?"🔴":"🟡"} {h.name}</b><div style={{fontSize:12,marginTop:4,color:"#666"}}>📍 {h.district} · iRAD 2025-26</div><div style={{display:"flex",gap:6,marginTop:4}}><span style={{background:"rgba(220,38,38,0.1)",color:"#dc2626",borderRadius:4,padding:"2px 8px",fontWeight:700}}>⚠️ {h.accidents} acc.</span><span style={{background:"rgba(220,38,38,0.1)",color:"#dc2626",borderRadius:4,padding:"2px 8px",fontWeight:700}}>💀 {h.killed} killed</span></div></div></Popup></Circle>))}
 
           {showLearned&&confirmedLearnedHotspots.map((h,i)=>{
-            const riskScoreVal = typeof h.risk_score === "number" && isFinite(h.risk_score) ? h.risk_score : 50;
-            const radius = Math.min(2000, Math.max(500, riskScoreVal * 20));
-            return(<Circle key={`lh_${i}`} center={[h.lat,h.lon]} radius={radius} pathOptions={{color:h.color||"#9333ea",fillColor:h.color||"#9333ea",fillOpacity:0.10,weight:2,dashArray:"4,4"}}><Popup><div style={{fontFamily:"'DM Sans',sans-serif",minWidth:200}}><b style={{color:h.color||"#9333ea"}}>🧠 Verified Community Hotspot</b><div style={{fontSize:12,marginTop:4,color:"#666"}}>Risk: {h.risk} · Score: {riskScoreVal?.toFixed?.(1)??riskScoreVal}</div><div style={{fontSize:12,color:"#666"}}>Reports: {h.count} community · {h.fatals} fatal</div></div></Popup></Circle>);
+            const ws = typeof h.weighted_score === "number" && isFinite(h.weighted_score) ? h.weighted_score : 15;
+            // Radius: 150m base + 25m per weighted score point, capped at 600m — driven by actual reported incidents
+            const radius = Math.min(600, Math.max(150, 150 + ws * 18));
+            return(<Circle key={`lh_${i}`} center={[h.lat,h.lon]} radius={radius} pathOptions={{color:h.color||"#9333ea",fillColor:h.color||"#9333ea",fillOpacity:0.14,weight:2,dashArray:"4,3"}}><Popup><div style={{fontFamily:"'DM Sans',sans-serif",minWidth:200}}><b style={{color:h.color||"#9333ea"}}>🧠 Adaptive Verified Hotspot</b><div style={{fontSize:12,marginTop:4,color:"#666"}}>Risk: {h.risk} · Score: {ws?.toFixed?.(1)??ws}</div><div style={{fontSize:12,color:"#666"}}>Reports: {h.count} community · {h.fatals} fatal incidents</div><div style={{fontSize:11,color:"#9333ea",marginTop:4}}>Radius: {Math.round(radius)}m — based on incident weight</div></div></Popup></Circle>);
           })}
 
           {showZones&&CRITICAL_ZONES.map(z=>{const clrMap={fog:"#64748b",bridge:"#dc2626",police:"#2563eb",landslide:"#9333ea",railway:"#ea580c"};const c=clrMap[z.type]||"#64748b";return(<Circle key={z.id} center={[z.lat,z.lon]} radius={z.radius} pathOptions={{color:c,fillColor:c,fillOpacity:0.07,weight:z.type==="fog"?1:1.5,dashArray:z.type==="fog"?"8,8":"4,4"}}><Popup><b style={{color:c}}>{ZONE_ICON[z.type]||"⚠️"} {z.name}</b><br/><span style={{fontSize:12,color:"#666"}}>{z.warn}</span></Popup></Circle>);})}

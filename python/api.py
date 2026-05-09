@@ -1,13 +1,13 @@
 """
 IntelliCrash API v4.7.0
 FIXES vs v4.6.0:
-  ✅ LSTM rule-based sim completely rewritten — far more sensitive to HP conditions
+  ✅ LSTM rule-based sim completely rewritten - far more sensitive to HP conditions
   ✅ LSTM adaptive weighting: if LSTM >> RF, LSTM gets up to 65% weight automatically
-  ✅ Route risk differentiation fixed — hotspot density, hairpin count, elevation, road type all vary per route
+  ✅ Route risk differentiation fixed - hotspot density, hairpin count, elevation, road type all vary per route
   ✅ ETA now risk-adjusted: high-risk routes use lower effective speed → longer ETA
   ✅ Route comparison scores are meaningfully different (never identical)
   ✅ Night + bad-weather compound multiplier (non-linear LSTM spike)
-  ✅ Visibility cascade — primary LSTM driver on HP mountain roads
+  ✅ Visibility cascade - primary LSTM driver on HP mountain roads
   ✅ Season boost applied as multiplier not additive for winter/monsoon extreme
   ✅ XAI explanation richer: shows LSTM weight, compound factors, route-specific risk
 """
@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 load_dotenv(BASE / ".env", override=True)
 
 _groq_key_check = os.getenv("GROQ_API_KEY", "")
-print(f"[GROQ] Key loaded: {'YES ✓' if _groq_key_check else 'NO ✗ — set GROQ_API_KEY in .env'}")
+print(f"[GROQ] Key loaded: {'YES' if _groq_key_check else 'NO - set GROQ_API_KEY in .env'}")
 if _groq_key_check:
     print(f"[GROQ] Key prefix: {_groq_key_check[:12]}...")
 
@@ -41,6 +41,57 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import hashlib
+
+# ── CACHE LAYER (Redis with In-Memory Fallback) ──────────────────────────────
+REDIS_OK = False
+redis_client = None
+_MEM_CACHE = {} # In-memory fallback
+
+try:
+    import redis as _redis_lib
+    redis_client = _redis_lib.Redis(
+        host='localhost', port=6379, db=0,
+        decode_responses=True, socket_connect_timeout=1,
+        socket_timeout=1
+    )
+    redis_client.ping()
+    REDIS_OK = True
+    print("[REDIS] ✅ Connected to Docker Redis on localhost:6379")
+except ImportError:
+    print("[REDIS] redis package not installed - pip install redis")
+except Exception as e:
+    print(f"[REDIS] Not available (start Docker Redis) - falling back to in-memory cache: {type(e).__name__}")
+
+def get_cache(key):
+    if REDIS_OK and redis_client:
+        try:
+            val = redis_client.get(key)
+            return json.loads(val) if val else None
+        except Exception: pass
+    
+    # In-memory fallback
+    entry = _MEM_CACHE.get(key)
+    if entry:
+        if time.time() < entry['expiry']:
+            return entry['data']
+        else:
+            del _MEM_CACHE[key]
+    return None
+
+def set_cache(key, data, ex=300):
+    if REDIS_OK and redis_client:
+        try:
+            redis_client.set(key, json.dumps(data), ex=ex)
+            return
+        except Exception: pass
+    
+    # In-memory fallback
+    _MEM_CACHE[key] = {
+        'data': data,
+        'expiry': time.time() + ex
+    }
+
 
 try:
     from sentiment import analyze_sentiment
@@ -211,14 +262,30 @@ def get_db() -> sqlite3.Connection:
 
 def init_db():
     conn = get_db()
+    
+    # ── ROBUST SCHEMA MIGRATION ────────────────────────────
+    # Add columns if they don't exist (safe migration pattern)
+    existing_cols = [r["name"] for r in conn.execute("PRAGMA table_info(community_reports)").fetchall()]
+    if "title" not in existing_cols:
+        try: conn.execute("ALTER TABLE community_reports ADD COLUMN title TEXT")
+        except: pass
+    if "source" not in existing_cols:
+        try: conn.execute("ALTER TABLE community_reports ADD COLUMN source TEXT DEFAULT 'community'")
+        except: pass
+    if "sentiment_label" not in existing_cols:
+        try: conn.execute("ALTER TABLE community_reports ADD COLUMN sentiment_label TEXT")
+        except: pass
+
     conn.executescript("""
     CREATE TABLE IF NOT EXISTS sos_alerts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        request_id TEXT, user_name TEXT, lat REAL, lon REAL,
+        request_id TEXT, user_name TEXT, victim_name TEXT, device_id TEXT,
+        vehicle_type TEXT, lat REAL, lon REAL,
         severity TEXT, risk_score REAL, message TEXT, address TEXT,
         speed REAL, weather TEXT, timestamp TEXT,
         status TEXT DEFAULT 'active', email_sent INTEGER DEFAULT 0,
-        sms_sent INTEGER DEFAULT 0, district TEXT
+        sms_sent INTEGER DEFAULT 0, district TEXT,
+        sensor_data TEXT -- JSON blob for crash analytics
     );
     CREATE TABLE IF NOT EXISTS emergency_contacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -232,15 +299,18 @@ def init_db():
         injured INTEGER DEFAULT 0, direction TEXT,
         photos TEXT DEFAULT '[]', upvotes INTEGER DEFAULT 0,
         sentiment TEXT DEFAULT 'neutral',
+        sentiment_label TEXT,
         timestamp TEXT, expires_at TEXT,
-        reporter TEXT DEFAULT 'Community', status TEXT DEFAULT 'active'
+        reporter TEXT DEFAULT 'Community', status TEXT DEFAULT 'active',
+        source TEXT DEFAULT 'community'
     );
     CREATE TABLE IF NOT EXISTS driver_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         driver_score REAL, risk_score REAL,
         trip_from TEXT, trip_to TEXT,
         distance_km REAL, duration_min REAL,
-        avg_speed REAL, timestamp TEXT
+        avg_speed REAL, timestamp TEXT,
+        vehicle_type TEXT
     );
     CREATE TABLE IF NOT EXISTS hotspot_learning (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,6 +324,11 @@ def init_db():
         title TEXT UNIQUE, summary TEXT, url TEXT,
         source TEXT, published_at TEXT, category TEXT DEFAULT 'accident'
     );
+    CREATE TABLE IF NOT EXISTS reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_name TEXT, review_text TEXT, rating INTEGER,
+        sentiment TEXT, sentiment_score REAL, timestamp TEXT
+    );
     CREATE TABLE IF NOT EXISTS feedback (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         rating INTEGER, comment TEXT,
@@ -261,6 +336,9 @@ def init_db():
         route_accuracy INTEGER, risk_accuracy INTEGER,
         app_ease INTEGER, timestamp TEXT
     );
+    CREATE INDEX IF NOT EXISTS idx_grid_key ON hotspot_learning(grid_key);
+    """)
+    conn.executescript("""
     CREATE TABLE IF NOT EXISTS behavior_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_type TEXT, value REAL, severity TEXT,
@@ -314,6 +392,15 @@ def init_db():
         distance_km REAL DEFAULT 0.0,
         timestamp TEXT,
         UNIQUE(sos_request_id, timestamp)
+    );
+    CREATE TABLE IF NOT EXISTS training_data (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT,
+        raw_text TEXT,
+        extracted_entities TEXT,
+        sentiment TEXT,
+        severity TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_reports_status ON community_reports(status);
     CREATE INDEX IF NOT EXISTS idx_reports_timestamp ON community_reports(timestamp);
@@ -396,13 +483,13 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ms = get_model_status()
-    logger.info(f"IntelliCrash API v4.7.0 starting — RF={ms['rf_loaded']} LSTM={ms['lstm_loaded']} Sentiment={SENTIMENT_OK} HotspotML={HOTSPOT_ML_OK}")
+    logger.info(f"IntelliCrash API v4.7.0 starting - RF={ms['rf_loaded']} LSTM={ms['lstm_loaded']} Sentiment={SENTIMENT_OK} HotspotML={HOTSPOT_ML_OK}")
     logger.info(f"Groq chat enabled: {bool(GROQ_API_KEY)}")
     yield
     logger.info("IntelliCrash API shutting down")
 
 app = FastAPI(
-    title="IntelliCrash — HP Road Safety AI",
+    title="IntelliCrash - HP Road Safety AI",
     description="IntelliCrash: AI Road Safety for Himachal Pradesh",
     version="4.7.0",
     contact={"name": "Shubham Abhishek", "email": "shubhamabhi004@gmail.com"},
@@ -507,6 +594,7 @@ class ReportModel(BaseModel):
     direction:   str       = Field("", max_length=200)
     photos:      List[str] = Field(default_factory=list)
     reporter:    str       = Field("Community", max_length=100)
+    source:      str       = Field("community", max_length=50)
     parent_id:   Optional[int] = Field(None)
     @field_validator("type")
     @classmethod
@@ -697,7 +785,7 @@ def _get_ip_location():
     return 31.1048, 77.1734, "Default: Shimla HP"
 
 def _run_rf(data: PredictRequest):
-    """Random Forest prediction — unchanged from v4.6."""
+    """Random Forest prediction - unchanged from v4.6."""
     if rf_model is None:
         spd = float(data.speed); wx = int(data.weather); base = 30.0
         if spd > 80: base += 25
@@ -731,21 +819,11 @@ def _run_rf(data: PredictRequest):
 
 
 # ══════════════════════════════════════════════════════════════════
-# FIX 1: LSTM — Complete rewrite for HP sensitivity
+# FIX 1: LSTM - Complete rewrite for HP sensitivity
 # ══════════════════════════════════════════════════════════════════
 
 def _run_lstm(speed: float, wx: int, tod: int, visibility: float = 10000.0) -> Optional[float]:
-    """
-    FIXED v4.7.0: LSTM is now HP-context-aware and highly sensitive.
-
-    Key changes vs v4.6:
-    - Visibility is the primary driver (not weather code alone)
-    - Non-linear compound multiplier: night + bad weather = exponential spike
-    - Speed threshold lowered: 60+ is already risky on HP mountain roads
-    - Base starts at 20 (not 25) but weather/vis multipliers are much larger
-    - Night compound: if tod==3 AND vis<1000, apply 1.25x multiplier
-    - Sequential pattern bonus: if 3+ severe factors co-occur, apply 1.3x
-    """
+    """LSTM HP-context-aware prediction."""
     if lstm_model is not None:
         try:
             ef = lstm_model.input_shape[-1]
@@ -760,7 +838,7 @@ def _run_lstm(speed: float, wx: int, tod: int, visibility: float = 10000.0) -> O
         except Exception as e:
             logger.warning(f"LSTM model predict failed: {e}")
 
-    # ── RULE-BASED LSTM SIMULATION (v4.7.0 — fully rewritten) ───────────────
+    # ── RULE-BASED LSTM SIMULATION (v4.7.0 - fully rewritten) ───────────────
     # Simulates what a trained LSTM on sequential HP driving data would output.
     # Much more sensitive than RF to real-time dangerous conditions.
     base = 20.0
@@ -772,7 +850,7 @@ def _run_lstm(speed: float, wx: int, tod: int, visibility: float = 10000.0) -> O
     base += w_add
     if wx >= 2: severe_factor_count += 1
 
-    # ── Speed — HP mountain roads: 60+ already risky ──────────────────────
+    # ── Speed - HP mountain roads: 60+ already risky ──────────────────────
     if speed > 100:
         base += 38; severe_factor_count += 1
     elif speed > 80:
@@ -782,13 +860,13 @@ def _run_lstm(speed: float, wx: int, tod: int, visibility: float = 10000.0) -> O
     elif speed > 40:
         base += 8
 
-    # ── Time of day — night is disproportionately dangerous in HP ──────────
+    # ── Time of day - night is disproportionately dangerous in HP ──────────
     tod_impact = {0: 6, 1: 0, 2: 14, 3: 32}
     t_add = tod_impact.get(tod, 0)
     base += t_add
     if tod == 3: severe_factor_count += 1
 
-    # ── Visibility — CRITICAL primary driver for LSTM on HP roads ──────────
+    # ── Visibility - CRITICAL primary driver for LSTM on HP roads ──────────
     # LSTM captures sequential sensor data: sudden visibility drop = danger spike
     if visibility < 100:
         base += 42; severe_factor_count += 1
@@ -838,7 +916,7 @@ def _hp_calibration(data: PredictRequest) -> float:
 def _get_season():
     m = datetime.now().month
     seasons = {
-        "Winter":{"months":[11,12,1,2,3],"boost":18,"note":"Ice/snow on mountain roads — HIGH danger"},
+        "Winter":{"months":[11,12,1,2,3],"boost":18,"note":"Ice/snow on mountain roads - HIGH danger"},
         "Monsoon":{"months":[7,8,9],"boost":14,"note":"Landslides, wet/slippery roads"},
         "PostMonsoon":{"months":[10],"boost":7,"note":"Road damage from monsoon still present"},
         "Summer":{"months":[4,5,6],"boost":0,"note":"Normal conditions"},
@@ -864,10 +942,10 @@ def _compute_risk_boosts(data: PredictRequest) -> tuple:
     if wx == 4: boosts.append(("Storm conditions", 35))
     elif wx == 3: boosts.append(("Snow/Ice on road", 30))
     elif wx == 2: boosts.append(("Fog reducing visibility", 25))
-    elif wx == 1: boosts.append(("Rain — wet roads", 18))
+    elif wx == 1: boosts.append(("Rain - wet roads", 18))
 
     if tod == 3: boosts.append(("Night driving in HP", 18))
-    elif tod == 2: boosts.append(("Evening — reduced visibility", 8))
+    elif tod == 2: boosts.append(("Evening - reduced visibility", 8))
 
     if vis < 100: boosts.append(("Near-zero visibility (<100m)", 30))
     elif vis < 300: boosts.append(("Poor visibility (<300m)", 20))
@@ -894,36 +972,36 @@ def _compute_risk_boosts(data: PredictRequest) -> tuple:
     return round(total, 1), boosts, factor_count
 
 
-# ══════════════════════════════════════════════════════════════════
-# FIX 2: Adaptive LSTM weighting
-# ══════════════════════════════════════════════════════════════════
-
-def _compute_ensemble_weights(rf_boosted: float, lstm_score: float) -> tuple:
+def _compute_ensemble_weights(rf_boosted: float, lstm_score: float, prev_score: Optional[float] = None) -> tuple:
     """
-    FIXED v4.7.0: Adaptive weighting.
+    UPGRADED v4.8.0: Adaptive weighting + Sequential Persistence.
     - Default: 50/50
-    - If LSTM >> RF by >20pts: LSTM gets 62% (it detected a sequential danger RF missed)
-    - If LSTM << RF by >20pts: RF gets 62% (structural factor RF understands better)
-    - Extreme divergence >35pts: dominant model gets 70%
-    This means LSTM genuinely shifts the final score, not just tweaks it by 3-4 points.
+    - If LSTM >> RF by >20pts: LSTM gets 65% (it detected a sequential danger RF missed)
+    - Sequential Persistence: If prev_score was HIGH (>67), LSTM gets a 10% boost in weight 
+      because sequential risk (fatigue/stress) is LSTM's core domain.
     """
     diff = lstm_score - rf_boosted
     abs_diff = abs(diff)
+    
+    w_rf, w_lstm = 0.5, 0.5
 
     if abs_diff > 35:
-        if diff > 0:
-            return 0.38, 0.62  # LSTM dominates heavily
-        else:
-            return 0.62, 0.38  # RF dominates heavily
+        if diff > 0: w_rf, w_lstm = 0.35, 0.65
+        else: w_rf, w_lstm = 0.65, 0.35
     elif abs_diff > 20:
-        if diff > 0:
-            return 0.42, 0.58  # LSTM leads
-        else:
-            return 0.58, 0.42  # RF leads
-    else:
-        return 0.50, 0.50  # Default equal weight
+        if diff > 0: w_rf, w_lstm = 0.40, 0.60
+        else: w_rf, w_lstm = 0.60, 0.40
+        
+    # Sequential Risk Persistence (10/10 Logic)
+    if prev_score and prev_score > 67:
+        # Shift 10% weight to LSTM as it handles temporal risk better
+        w_lstm = min(0.8, w_lstm + 0.1)
+        w_rf = 1.0 - w_lstm
+
+    return w_rf, w_lstm
 
 
+# NOTE: Duplicate /api/predict removed — the correct endpoint with request: Request is below.
 def _xai_factors(data: PredictRequest, rf_base: float, boost: float, lstm_score: Optional[float],
                   boosts_list: list, rf_weight: float, lstm_weight: float) -> Dict:
     """XAI factors dict including LSTM weight, visibility, vehicles, season context."""
@@ -937,7 +1015,7 @@ def _xai_factors(data: PredictRequest, rf_base: float, boost: float, lstm_score:
     f["Weather"] = {0:"✓ Clear",1:"⚠️ Rain",2:"🌫️ Fog",3:"❄️ Snow/Ice",4:"⛈️ Storm"}.get(int(data.weather), f"Code {data.weather}")
     f["Time"] = {0:"🌅 Morning",1:"☀️ Day",2:"🌆 Evening",3:"🌙 Night"}.get(int(data.timeOfDay), "Unknown")
     f["Road Condition"] = {0:"✓ Dry",1:"⚠️ Wet",2:"❄️ Icy",3:"🚧 Repair"}.get(int(data.roadCondition), "Unknown")
-    f["Critical Zone"] = "⚠️ YES — iRAD accident hotspot" if int(data.criticalZone) == 1 else "✓ No hotspot nearby"
+    f["Critical Zone"] = "⚠️ YES - iRAD accident hotspot" if int(data.criticalZone) == 1 else "✓ No hotspot nearby"
     f["Visibility"] = f"{float(data.visibility):.0f}m {'🌫️ POOR' if float(data.visibility) < 1000 else '✓ OK'}"
     f["Traffic Density"] = f"{float(data.vehicles):.0f} vehicles {'⚠️ HIGH' if float(data.vehicles) > 10 else '✓ Normal'}"
     f["Light Condition"] = "🌙 Dark/Unlit" if int(data.lightCondition) == 1 else "☀️ Daylight"
@@ -948,7 +1026,7 @@ def _xai_factors(data: PredictRequest, rf_base: float, boost: float, lstm_score:
         f["Ensemble Weights"] = f"RF {rf_weight*100:.0f}% / LSTM {lstm_weight*100:.0f}%"
 
     season, sdata = _get_season()
-    f["Season"] = f"{season} (+{sdata['boost']} boost) — {sdata['note']}"
+    f["Season"] = f"{season} (+{sdata['boost']} boost) - {sdata['note']}"
     return f
 
 
@@ -973,10 +1051,10 @@ def _xai_text(data: PredictRequest, score: float, boosts_list: list,
         desc = f"Risk elevated due to: {primary} and {sorted_boosts[1][0]}."
     elif n <= 4:
         others = ", ".join(b[0] for b in sorted_boosts[1:])
-        desc = f"MULTIPLE HAZARDS — {primary}; also {others}."
+        desc = f"MULTIPLE HAZARDS - {primary}; also {others}."
     else:
         top3 = ", ".join(b[0] for b in sorted_boosts[:3])
-        desc = f"HIGH COMPOUND RISK — {top3} (+{n-3} more factors)."
+        desc = f"HIGH COMPOUND RISK - {top3} (+{n-3} more factors)."
 
     level = "HIGH" if score >= 67 else "MEDIUM" if score >= 34 else "LOW"
     lstm_note = ""
@@ -998,7 +1076,7 @@ def _send_sos_email(to, user, lat, lon, sev, score, addr, speed=0, is_admin=Fals
 <div style="font-size:16px;color:{sev_color}">{sev_label}</div></div>
 <a href="https://maps.google.com/?q={lat},{lon}">View on Google Maps</a></div>"""
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"SOS — {user} | {sev_label} {score:.0f}/100 | IntelliCrash"
+    msg["Subject"] = f"SOS - {user} | {sev_label} {score:.0f}/100 | IntelliCrash"
     msg["From"] = GMAIL_USER; msg["To"] = to
     msg.attach(MIMEText(html, "html"))
     for port, method in [(465,"SSL"),(587,"TLS")]:
@@ -1025,7 +1103,7 @@ def _send_contact_email(name: str, sender_email: str, message: str) -> bool:
 <div style="background:#f5f5f8;border-radius:8px;padding:14px;white-space:pre-wrap">{message}</div>
 <p style="font-size:12px;color:#9898a8">Reply to: <a href="mailto:{sender_email}">{sender_email}</a> | Sent: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p></div>"""
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"📬 Contact: {name} — {message[:50]}..."
+    msg["Subject"] = f"📬 Contact: {name} - {message[:50]}..."
     msg["From"] = GMAIL_USER; msg["To"] = ADMIN_EMAIL; msg["Reply-To"] = sender_email
     msg.attach(MIMEText(html, "html"))
     for port, method in [(465,"SSL"),(587,"TLS")]:
@@ -1100,7 +1178,7 @@ def km(lat1, lon1, lat2, lon2):
 
 
 # ══════════════════════════════════════════════════════════════════
-# FIX 3: Route ETA — risk-adjusted speed model
+# FIX 3: Route ETA - risk-adjusted speed model
 # ══════════════════════════════════════════════════════════════════
 
 def _risk_adjusted_speed(base_speed_kph: float, risk_score: float, road_type: str = "mountain") -> float:
@@ -1128,7 +1206,7 @@ def _risk_adjusted_speed(base_speed_kph: float, risk_score: float, road_type: st
 
 
 # ══════════════════════════════════════════════════════════════════
-# FIX 4: Route differentiation — hotspot, elevation, hairpin factors
+# FIX 4: Route differentiation - hotspot, elevation, hairpin factors
 # ══════════════════════════════════════════════════════════════════
 
 def _compute_route_risk_modifier(
@@ -1179,7 +1257,7 @@ def _compute_route_risk_modifier(
 def predict(data: PredictRequest, request: Request):
     """
     FIXED v4.7.0:
-    - LSTM rewritten — far more sensitive, compounds properly
+    - LSTM rewritten - far more sensitive, compounds properly
     - Adaptive weighting: LSTM gets up to 62-70% when it detects danger RF missed
     - Visibility is primary LSTM driver (not just weather code)
     - Night + bad weather = non-linear spike via compound multiplier
@@ -1210,7 +1288,7 @@ def predict(data: PredictRequest, request: Request):
         # ── RISK BOOSTS with multi-factor cascade ─────────────────────────
         total_boost, boosts_list, factor_count = _compute_risk_boosts(data)
 
-        # Seasonal boost — multiplicative for extreme seasons
+        # Seasonal boost - multiplicative for extreme seasons
         if seasonal_boost >= 14:
             final = min(100.0, base_ensemble + total_boost * 1.1 + seasonal_boost * 0.5)
         else:
@@ -1224,7 +1302,7 @@ def predict(data: PredictRequest, request: Request):
 
         logger.info(
             f"predict v4.7: rf={rf_score:.1f} rf_boosted={rf_boosted:.1f} "
-            f"lstm={lstm_score:.1f if lstm_score else 'N/A'} "
+            f"lstm={f'{lstm_score:.1f}' if lstm_score is not None else 'N/A'} "
             f"weights=RF{rf_weight:.2f}/LSTM{lstm_weight:.2f} "
             f"boost={total_boost:.1f} factors={factor_count} final={final:.1f} label={sl}"
         )
@@ -1250,7 +1328,7 @@ def predict(data: PredictRequest, request: Request):
 
 
 # ══════════════════════════════════════════════════════════════════
-# DIRECTIONS — ETA now risk-adjusted
+# DIRECTIONS - ETA now risk-adjusted
 # ══════════════════════════════════════════════════════════════════
 
 @app.get("/api/directions", tags=["Navigation"])
@@ -1395,7 +1473,7 @@ async def chat(data: ChatRequest, request: Request):
         res.raise_for_status()
         reply = res.json()["choices"][0]["message"]["content"].strip()
     except requests.exceptions.Timeout:
-        raise HTTPException(504, "Groq API timeout — please try again")
+        raise HTTPException(504, "Groq API timeout - please try again")
     except requests.exceptions.HTTPError as e:
         sc = e.response.status_code
         if sc == 401: raise HTTPException(502, "Groq API key is invalid or expired.")
@@ -1668,16 +1746,21 @@ def trigger_sos(req: SOSRequest, request: Request):
     district = _get_district(req.lat, req.lon); conn = get_db()
     try:
         conn.execute(
-            "INSERT INTO sos_alerts (request_id,user_name,lat,lon,severity,risk_score,message,address,speed,weather,timestamp,status,district) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (request_id, req.user_name, req.lat, req.lon, str(label), float(fs),
+            """INSERT INTO sos_alerts (
+                request_id, user_name, victim_name, device_id, vehicle_type,
+                lat, lon, severity, risk_score, message, address, speed,
+                weather, timestamp, status, district, sensor_data
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (request_id, req.user_name, req.victim_name or req.user_name, req.device_id, req.vehicle_type,
+             req.lat, req.lon, str(label), float(fs),
              req.message or f"SOS from {req.user_name}", req.address, req.speed, req.weather,
-             datetime.now().isoformat(), "active", district)
+             datetime.now().isoformat(), "active", district, req.sensor_data)
         )
         # Also add to community_reports so it shows on the Bulletin Portal
         sos_desc = f"🚨 EMERGENCY SOS: {req.user_name} reported an accident at {req.address or 'Current Location'}."
         sos_title = generate_headline_nlp(sos_desc)
         conn.execute(
-            "INSERT INTO community_reports (title,type,lat,lon,description,landmark,road,severity,injured,photos,sentiment,timestamp,expires_at,reporter,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO community_reports (title,type,lat,lon,description,landmark,road,severity,injured,photos,sentiment,timestamp,expires_at,reporter,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (sos_title, "accident", req.lat, req.lon, sos_desc, req.address or "Roadside", "HP Road", "severe", 0, "[]", "negative", datetime.now().isoformat(), (datetime.now()+timedelta(hours=6)).isoformat(), "OFFICIAL (SOS)", "active")
         )
         conn.commit()
@@ -1807,6 +1890,41 @@ def del_contact(cid: int):
 _REPORT_CACHE = {"data": None, "ts": 0}
 CACHE_TTL = 30 # 30 seconds for live community data
 
+# ── MULTI-LINGUAL LOCATION EXTRACTION ─────────────────────────────
+HP_LOCATION_MAP = {
+    "shimla": (31.1048, 77.1734), "शिमला": (31.1048, 77.1734),
+    "manali": (32.2432, 77.1892), "मनाली": (32.2432, 77.1892),
+    "mandi": (31.5892, 76.9182), "मंडी": (31.5892, 76.9182),
+    "kullu": (31.9578, 77.1095), "कुल्लू": (31.9578, 77.1095),
+    "dharamshala": (32.2190, 76.3234), "धर्मशाला": (32.2190, 76.3234),
+    "solan": (30.9084, 77.0955), "सोलन": (30.9084, 77.0955),
+    "hamirpur": (31.6862, 76.5213), "हमीरपुर": (31.6862, 76.5213),
+    "bilaspur": (31.3260, 76.7597), "बिलासपुर": (31.3260, 76.7597),
+    "chamba": (32.5534, 76.1258), "चंबा": (32.5534, 76.1258),
+    "un": (31.4685, 76.2708), "ऊना": (31.4685, 76.2708),
+    "kangra": (32.0998, 76.2691), "कांगड़ा": (32.0998, 76.2691),
+    "kinnaur": (31.6505, 78.4752), "किन्नौर": (31.6505, 78.4752),
+    "lahaul": (32.6100, 77.1000), "लाहौल": (32.6100, 77.1000),
+    "spiti": (32.2400, 78.0300), "स्पीति": (32.2400, 78.0300),
+    "rohtang": (32.3716, 77.2466), "रोहतांग": (32.3716, 77.2466),
+    "kasol": (32.0100, 77.3150), "कसोल": (32.0100, 77.3150),
+    "una": (31.4685, 76.2708), "ऊना": (31.4685, 76.2708),
+    "paonta": (30.4373, 77.6206), "पाोंटा": (30.4373, 77.6206),
+    "nahan": (30.5599, 77.2955), "नाहन": (30.5599, 77.2955),
+    "parwanoo": (30.8354, 76.9535), "परवाणू": (30.8354, 76.9535),
+    "dalhousie": (32.5387, 75.9710), "डलहौजी": (32.5387, 75.9710),
+    "baddi": (30.9324, 76.7865), "बद्दी": (30.9324, 76.7865),
+    "keylong": (32.5721, 77.0326), "केलॉन्ग": (32.5721, 77.0326),
+}
+
+def _extract_location_nlp(text):
+    if not text: return None, None
+    text_l = text.lower()
+    for name, coords in HP_LOCATION_MAP.items():
+        if name in text_l:
+            return coords
+    return None, None
+
 @app.post("/api/reports", tags=["Reports"])
 def add_report(r: ReportModel):
     global _REPORT_CACHE
@@ -1816,6 +1934,14 @@ def add_report(r: ReportModel):
     ea = (datetime.now()+timedelta(hours=eh)).isoformat()
     desc = r.description or ""
     
+    # NLP Location Learning
+    lat, lon = r.lat, r.lon
+    if (not lat or not lon or (abs(lat-31.1048)<0.001 and abs(lon-77.1734)<0.001)):
+        ex_lat, ex_lon = _extract_location_nlp(desc + " " + (r.title or ""))
+        if ex_lat:
+            lat, lon = ex_lat, ex_lon
+            logger.info(f"Auto-extracted location: {lat}, {lon}")
+
     # AI Processing: Compact Headline + Sentiment + Severity check
     title = r.title if r.title else generate_headline_nlp(desc)
     sentiment_res = analyze_sentiment(desc) if SENTIMENT_OK else {"label": "neutral"}
@@ -1830,16 +1956,36 @@ def add_report(r: ReportModel):
 
     conn = get_db()
     try:
+        src = getattr(r, "source", "community")
         cur = conn.execute(
-            "INSERT INTO community_reports (title,type,lat,lon,description,landmark,road,severity,injured,direction,photos,sentiment,timestamp,expires_at,reporter,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (title,r.type,r.lat,r.lon,desc,r.landmark,r.road,final_severity,r.injured,r.direction,json.dumps(r.photos),sentiment_res.get("label","neutral"),datetime.now().isoformat(),ea,r.reporter or "IntelliCrash Community","active")
+            "INSERT INTO community_reports (title,type,lat,lon,description,landmark,road,severity,injured,direction,photos,sentiment,timestamp,expires_at,reporter,status,source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (title,r.type,lat,lon,desc,r.landmark,r.road,final_severity,r.injured,r.direction,json.dumps(r.photos),sentiment_res.get("label","neutral"),datetime.now().isoformat(),ea,r.reporter or "IntelliCrash Community","active",src)
         )
         report_id = cur.lastrowid
         conn.commit()
-        _learn_hotspot(r.lat, r.lon, final_severity)
-        return {"status": "added", "id": report_id, "expires_in_hours": eh, "headline": title, "sentiment": sentiment_res.get("label")}
+        _learn_hotspot(lat, lon, final_severity)
+        return {"status": "added", "id": report_id, "expires_in_hours": eh, "headline": title, "sentiment": sentiment_res.get("label"), "auto_location": lat != r.lat}
     finally:
         conn.close()
+
+@app.post("/api/reports/analyze", tags=["Reports"])
+def analyze_report_dry(r: ReportModel):
+    """Dry-run NLP analysis for the Admin Playground."""
+    desc = r.description or ""
+    lat, lon = r.lat, r.lon
+    if (not lat or not lon or (abs(lat-31.1048)<0.001 and abs(lon-77.1734)<0.001)):
+        ex_lat, ex_lon = _extract_location_nlp(desc + " " + (r.title or ""))
+        if ex_lat: lat, lon = ex_lat, ex_lon
+    
+    title = r.title if r.title else generate_headline_nlp(desc)
+    sentiment_res = analyze_sentiment(desc) if SENTIMENT_OK else {"label": "neutral"}
+    
+    return {
+        "headline": title,
+        "sentiment": sentiment_res.get("label"),
+        "auto_location": lat != r.lat,
+        "extracted_coords": {"lat": lat, "lon": lon} if lat else None
+    }
 
 @app.post("/api/reports/{rid}/resolve", tags=["Reports"])
 def resolve_report(rid: int):
@@ -1894,10 +2040,42 @@ def get_reports(limit: int = 100, active_only: bool = True, lat: Optional[float]
     finally:
         conn.close()
 
+@app.post("/api/reports/{rid}/resolve", tags=["Reports"])
+def resolve_report(rid: int):
+    conn = get_db()
+    conn.execute("UPDATE community_reports SET status='resolved' WHERE id=?", (rid,))
+    conn.commit()
+    conn.close()
+    return {"status": "resolved"}
+
+@app.delete("/api/reports/{rid}", tags=["Reports"])
+def delete_report(rid: int):
+    conn = get_db()
+    conn.execute("DELETE FROM community_reports WHERE id=?", (rid,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
 @app.put("/api/reports/{rid}/upvote", tags=["Reports"])
 def upvote(rid: int):
     conn = get_db(); conn.execute("UPDATE community_reports SET upvotes=upvotes+1 WHERE id=?", (rid,)); conn.commit(); conn.close()
     return {"status": "upvoted"}
+
+@app.delete("/api/sos/{sid}", tags=["SOS"])
+def delete_sos(sid: int):
+    conn = get_db()
+    conn.execute("DELETE FROM sos_alerts WHERE id=?", (sid,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+@app.delete("/api/contacts/{cid}", tags=["SOS"])
+def delete_contact(cid: int):
+    conn = get_db()
+    conn.execute("DELETE FROM emergency_contacts WHERE id=?", (cid,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
 
 @app.get("/api/reports/{rid}/pdf", tags=["Reports"])
 def export_report_pdf(rid: int):

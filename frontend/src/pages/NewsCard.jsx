@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Share2, CheckCircle2, X } from "lucide-react";
-import { Typography, Box, IconButton } from "@mui/material";
+import { useState, useMemo } from "react";
+import { Share2, CheckCircle2, X, Trash2 } from "lucide-react";
+import { Typography, Box, IconButton, Tooltip } from "@mui/material";
 import { motion } from "framer-motion";
 
 const BASE = import.meta?.env?.VITE_API_URL ?? "http://127.0.0.1:8000";
@@ -13,7 +13,7 @@ const CATEGORY_STYLE = {
   GENERAL:   { color: "#10b981", label: "NEWS"      },
 };
 
-export default function NewsCard({ incident, isAdmin, onResolve }) {
+export default function NewsCard({ incident, onResolve, badge }) {
   const [imgError, setImgError] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -28,13 +28,21 @@ export default function NewsCard({ incident, isAdmin, onResolve }) {
 
   const { 
     id, headline, title, content, author, date, category, 
-    image_url, video_url, severity 
+    image_url, video_url, severity, source
   } = incident;
+
+  const isAdmin = useMemo(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem("ic_user") || "{}");
+      return user.role === "admin" || user.email?.includes("admin") || user.is_admin || user.email === "shubhamabhi004@gmail.com";
+    } catch { return false; }
+  }, []);
 
   const displayTitle = cleanStr(headline || title || "Safety Advisory");
   const displayContent = cleanStr(incident.description || incident.content || "Safety update for Himachal Pradesh.");
-  const displayAuthor = author === "IntelliCrash Demo" ? "IntelliCrash" : author === "IntelliCrash-Adaptive" || author === "system" || author === "IntelliCrash AI" ? "AI Safety Engine" : author;
-  const isVerified = author === "system" || author === "IntelliCrash-Adaptive" || author === "HP Safety Base" || author === "IntelliCrash AI";
+  const displayAuthor = (author || "HP Safety Base") === "IntelliCrash Demo" ? "IntelliCrash" : (author || "HP Safety Base") === "IntelliCrash-Adaptive" || (author || "system") === "system" || (author || "IntelliCrash AI") === "IntelliCrash AI" ? "AI Safety Engine" : (author || "HP Safety Base");
+  
+  const isVerified = source === "system" || source === "ai";
   const isSevere = severity === "severe";
 
   const cat = CATEGORY_STYLE[category] || CATEGORY_STYLE.GENERAL;
@@ -63,6 +71,16 @@ export default function NewsCard({ incident, isAdmin, onResolve }) {
       else alert("Failed to resolve incident.");
     } catch (err) { console.error("Resolve failed:", err); }
     finally { setResolving(false); }
+  };
+
+  const handleDelete = async (e) => {
+    e.stopPropagation();
+    if (!window.confirm("Permanently delete this report?")) return;
+    try {
+      const res = await fetch(`${BASE}/api/reports/${id}`, { method: "DELETE" });
+      if (res.ok) onResolve(id);
+      else alert("Delete failed.");
+    } catch (err) { console.error("Delete failed:", err); }
   };
 
   return (
@@ -103,9 +121,9 @@ export default function NewsCard({ incident, isAdmin, onResolve }) {
             position: "relative",
           }}>
             {showImage ? (
-              <img src={image_url} alt="News" onError={() => setImgError(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <img src={image_url} alt="News" loading="lazy" onError={() => setImgError(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             ) : (
-              <video src={video_url} autoPlay muted loop style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <video src={video_url} muted loop style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             )}
             <Box sx={{
               position: "absolute", top: 0, left: 0, right: 0,
@@ -121,7 +139,6 @@ export default function NewsCard({ incident, isAdmin, onResolve }) {
               <Box sx={{ fontSize: 14 }}>{isSevere ? "🚨" : "📢"}</Box>
               {isSevere ? "CRITICAL ALERT" : cat.label}
             </Box>
-
           </Box>
         )}
 
@@ -129,15 +146,29 @@ export default function NewsCard({ incident, isAdmin, onResolve }) {
         <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 1.5 }}>
           <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              {isVerified && (
-                <Box sx={{ 
-                  display: "inline-flex", alignItems: "center", gap: 0.5, 
-                  background: "rgba(16,185,129,0.1)", color: "var(--green)", 
-                  px: 1.5, py: 0.5, borderRadius: "20px", fontSize: "10px", fontWeight: "800",
-                  border: "1px solid rgba(16,185,129,0.2)"
-                }}>
-                  <CheckCircle2 size={12} /> OFFICIAL
-                </Box>
+              {badge ? badge : (
+                <>
+                  {isVerified && (
+                    <Box sx={{ 
+                      display: "inline-flex", alignItems: "center", gap: 0.5, 
+                      background: "rgba(16,185,129,0.1)", color: "var(--green)", 
+                      px: 1.5, py: 0.5, borderRadius: "20px", fontSize: "10px", fontWeight: "800",
+                      border: "1px solid rgba(16,185,129,0.2)"
+                    }}>
+                      <CheckCircle2 size={12} /> OFFICIAL AI
+                    </Box>
+                  )}
+                  {!isVerified && (
+                    <Box sx={{ 
+                      display: "inline-flex", alignItems: "center", gap: 0.5, 
+                      background: "rgba(59,130,246,0.1)", color: "var(--blue)", 
+                      px: 1.5, py: 0.5, borderRadius: "20px", fontSize: "10px", fontWeight: "800",
+                      border: "1px solid rgba(59,130,246,0.2)"
+                    }}>
+                      👤 USER REPORT
+                    </Box>
+                  )}
+                </>
               )}
               <Typography sx={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 700 }}>
                 {new Date(date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -146,13 +177,13 @@ export default function NewsCard({ incident, isAdmin, onResolve }) {
             
             <Box sx={{ 
               display: "flex", alignItems: "center", gap: 1,
-              background: isSevere ? "rgba(239,68,68,0.1)" : "rgba(59,130,246,0.1)",
-              color: isSevere ? "var(--red)" : "var(--blue)",
+              background: isSevere ? "rgba(239,68,68,0.1)" : (isVerified ? "rgba(59,130,246,0.1)" : "rgba(16,185,129,0.1)"),
+              color: isSevere ? "var(--red)" : (isVerified ? "var(--blue)" : "var(--green)"),
               px: 1.5, py: 0.5, borderRadius: "20px", fontSize: "10px", fontWeight: "900",
-              border: isSevere ? "1px solid rgba(239,68,68,0.2)" : "1px solid rgba(59,130,246,0.2)"
+              border: isSevere ? "1px solid rgba(239,68,68,0.2)" : (isVerified ? "1px solid rgba(59,130,246,0.2)" : "1px solid rgba(16,185,129,0.2)")
             }}>
-              <span>AI</span>
-              <span>{isSevere ? "CRITICAL RISK" : "ADVISORY"}</span>
+              <span>{isVerified ? "AI" : "COMMUNITY"}</span>
+              <span>{isSevere ? "CRITICAL" : (isVerified ? "ADVISORY" : "PULSE")}</span>
             </Box>
           </Box>
 
@@ -187,22 +218,38 @@ export default function NewsCard({ incident, isAdmin, onResolve }) {
             borderTop: "1px solid var(--border)",
           }}>
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)" }}>
-              SOURCE: {displayAuthor.toUpperCase()}
+              SOURCE: {(displayAuthor || "HP Safety Base").toUpperCase()}
             </Typography>
             
             <Box sx={{ display: "flex", gap: 1 }}>
               {isAdmin && (
-                <IconButton 
-                  onClick={handleResolve}
-                  disabled={resolving}
-                  sx={{
-                    background: "rgba(16,185,129,0.1)", color: "var(--green)",
-                    borderRadius: "12px", p: 1,
-                    "&:hover": { background: "rgba(16,185,129,0.2)" }
-                  }}
-                >
-                  <CheckCircle2 size={18} />
-                </IconButton>
+                <>
+                  <Tooltip title="Mark as Resolved">
+                    <IconButton 
+                      onClick={handleResolve}
+                      disabled={resolving}
+                      sx={{
+                        background: "rgba(16,185,129,0.1)", color: "var(--green)",
+                        borderRadius: "12px", p: 1,
+                        "&:hover": { background: "rgba(16,185,129,0.2)" }
+                      }}
+                    >
+                      <CheckCircle2 size={18} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Delete Report">
+                    <IconButton 
+                      onClick={handleDelete}
+                      sx={{
+                        background: "rgba(239,68,68,0.1)", color: "var(--red)",
+                        borderRadius: "12px", p: 1,
+                        "&:hover": { background: "rgba(239,68,68,0.2)" }
+                      }}
+                    >
+                      <Trash2 size={18} />
+                    </IconButton>
+                  </Tooltip>
+                </>
               )}
               
               <IconButton 
@@ -264,7 +311,7 @@ export default function NewsCard({ incident, isAdmin, onResolve }) {
             )}
 
             <Box sx={{ p: { xs: 3, md: 5 } }}>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 3 }}>
+              <Box sx={{ display:"flex", alignItems:"center", gap:1.5, mb:3 }}>
                 <Box sx={{ 
                   background: cat.color, color: "#fff", 
                   px: 2, py: 0.5, borderRadius: "8px", 
@@ -273,12 +320,12 @@ export default function NewsCard({ incident, isAdmin, onResolve }) {
                   {cat.label}
                 </Box>
                 <Box sx={{ 
-                  background: (incident.sentiment || (isSevere ? "negative" : "neutral")) === "negative" ? "rgba(239,68,68,0.1)" : (incident.sentiment || (isSevere ? "negative" : "neutral")) === "positive" ? "rgba(16,185,129,0.1)" : "rgba(59,130,246,0.1)",
-                  color: (incident.sentiment || (isSevere ? "negative" : "neutral")) === "negative" ? "var(--red)" : (incident.sentiment || (isSevere ? "negative" : "neutral")) === "positive" ? "var(--green)" : "var(--blue)",
+                  background: isSevere || incident.sentiment === "negative" ? "rgba(239,68,68,0.1)" : "rgba(59,130,246,0.1)",
+                  color: isSevere || incident.sentiment === "negative" ? "var(--red)" : "var(--blue)",
                   px: 2, py: 0.5, borderRadius: "8px", fontSize: "11px", fontWeight: "800",
-                  border: `1px solid ${(incident.sentiment || (isSevere ? "negative" : "neutral")) === "negative" ? "rgba(239,68,68,0.2)" : (incident.sentiment || (isSevere ? "negative" : "neutral")) === "positive" ? "rgba(16,185,129,0.2)" : "rgba(59,130,246,0.2)"}`
+                  border: `1px solid ${isSevere || incident.sentiment === "negative" ? "rgba(239,68,68,0.2)" : "rgba(59,130,246,0.2)"}`
                 }}>
-                  AI SENTIMENT: {(incident.sentiment || (isSevere ? "negative" : "neutral")).toUpperCase()}
+                  SEVERITY: {isSevere ? "CRITICAL" : (incident.sentiment === "negative" ? "HIGH" : "MODERATE")}
                 </Box>
               </Box>
 

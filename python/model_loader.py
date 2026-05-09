@@ -151,3 +151,12 @@ def get_model_status() -> Dict:
         "missing_files":    _missing_files,
         "load_errors":      _load_errors,
     }
+    
+# ── Test Runner ───────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import json
+    logging.basicConfig(level=logging.INFO)
+    print("\n--- ML MODEL STATUS ---")
+    status = get_model_status()
+    print(json.dumps(status, indent=2))
+    print("------------------------\n")

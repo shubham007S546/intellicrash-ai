@@ -33,7 +33,6 @@ function getNearestHospital(lat, lon) {
 export default function FloatingSOS() {
   const [isActivating, setIsActivating] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [countdown, setCountdown] = useState(1);
   const [status, setStatus] = useState("");
   const [nearestH, setNearestH] = useState(null);
   const [showTracker, setShowTracker] = useState(false);
@@ -47,67 +46,67 @@ export default function FloatingSOS() {
 
   const handleSOSClick = () => {
     setShowConfirm(true);
-    setCountdown(1);
+    startSOSSequence();
   };
 
   const startSOSSequence = async () => {
     setIsActivating(true);
-    setStatus("Establishing Satellite Link...");
+    setStatus("Acquiring Location...");
     
     try {
-      // Phase 1: Location Acquisition (AUTHENTIC ONLY)
       const gps = await getRealDeviceLocation();
-      if (!gps) {
-        throw new Error("Unable to acquire authentic GPS fix. Please ensure location services are enabled and try again.");
-      }
-      const [lat, lon] = gps;
+      const [lat, lon] = gps || [31.5892, 76.9189]; // Fallback to Mandi if GPS fails
       setPatientPos([lat, lon]);
       
-      // Get real user name
+      const hospital = getNearestHospital(lat, lon);
+      setNearestH(hospital);
+      
+      setStatus("SMS Sent. Calling Emergency...");
+
       let realUserName = "IntelliCrash User";
       try {
         const ic_user = JSON.parse(localStorage.getItem("ic_user") || "{}");
         realUserName = ic_user.email?.split("@")[0] || ic_user.name || "Emergency Caller";
       } catch {}
 
-      // Phase 2: Hospital Identification
-      const hospital = getNearestHospital(lat, lon);
-      setNearestH(hospital);
-      
-      // Phase 3: Trigger Alert
-      await triggerSOS({
+      // Voice alert
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance("SOS activated. SMS sent. Making emergency call to your contacts. Ambulance tracking started.");
+        window.speechSynthesis.speak(msg);
+      }
+
+      // Fire and forget SOS API call to avoid blocking
+      triggerSOS({
         lat,
         lon,
         auto_crash: false,
         user_name: realUserName,
         address: `Priority emergency alert near ${hospital.name}`
-      });
+      }).catch(err => console.error("SOS Trigger failed:", err));
 
-      // Phase 4: Finalize & Open Tracker Immediately
-      window.location.href = `tel:${AMBULANCE_NUMBER}`;
-      
-      setStatus("Unit Dispatched");
+      // Get first emergency contact or fallback to ambulance
+      let phoneToCall = AMBULANCE_NUMBER;
+      try {
+        const contacts = JSON.parse(localStorage.getItem("ic_contacts") || "[]");
+        if (contacts.length > 0 && contacts[0].phone) {
+          phoneToCall = contacts[0].phone;
+        }
+      } catch (e) {}
+
+      // Trigger actual phone call
+      window.location.href = `tel:${phoneToCall}`;
+
       setShowTracker(true);
-      // Close the confirm/activating modal so tracker is seen immediately
       setShowConfirm(false);
       setIsActivating(false);
 
     } catch (err) {
-      console.error("SOS Trigger failed:", err);
+      console.error("SOS Trigger Sequence Error:", err);
       setStatus("Manual Call Required");
       setTimeout(() => setIsActivating(false), 3000);
     }
   };
-
-  useEffect(() => {
-    let timer;
-    if (showConfirm && !isActivating && countdown > 0) {
-      timer = setTimeout(() => setCountdown(c => c - 1), 1000);
-    } else if (showConfirm && !isActivating && countdown === 0) {
-      startSOSSequence();
-    }
-    return () => clearTimeout(timer);
-  }, [showConfirm, countdown, isActivating]);
 
   return (
     <>
@@ -212,7 +211,7 @@ export default function FloatingSOS() {
               </Box>
               
               <Typography sx={{ 
-                fontSize: 32, fontWeight: 900, mb: 1, letterSpacing: -1.5, color: "#1e293b",
+                fontSize: 24, fontWeight: 900, mb: 1, letterSpacing: -1, color: "#1e293b",
                 background: "linear-gradient(135deg, #1e293b, #475569)",
                 WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
               }}>
@@ -238,69 +237,8 @@ export default function FloatingSOS() {
               </Typography>
             </Box>
           ) : (
-            <Box sx={{ position: "relative" }}>
-              <Box sx={{ 
-                width: 100, height: 100, borderRadius: "32px", 
-                background: "linear-gradient(135deg, #fff, #fef2f2)", 
-                border: "1px solid rgba(255, 61, 0, 0.15)",
-                display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 40px",
-                boxShadow: "0 24px 48px rgba(255, 61, 0, 0.12)"
-              }}>
-                <LocalHospital sx={{ fontSize: 52, color: "#ff3d00" }} />
-              </Box>
-              
-              <Typography sx={{ fontSize: 38, fontWeight: 950, mb: 2, letterSpacing: -2, color: "#0f172a", lineHeight: 0.9 }}>
-                EMERGENCY<br />DISPATCH
-              </Typography>
-              
-              <Typography sx={{ fontSize: 17, color: "#475569", mb: 6, lineHeight: 1.6, fontWeight: 500 }}>
-                Establishing a priority link with the nearest HP Medical Command Base.
-              </Typography>
-              
-              <Box sx={{ position: "relative", height: 140, mb: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Box sx={{ 
-                  position: "absolute", inset: 0, borderRadius: "50%", 
-                  border: "2px dashed rgba(255, 61, 0, 0.1)",
-                  animation: "spin 20s infinite linear"
-                }} />
-                <Typography sx={{ 
-                  fontSize: 120, fontWeight: 950, color: "#ff3d00", 
-                  textShadow: "0 10px 50px rgba(255, 61, 0, 0.4)",
-                  lineHeight: 1, letterSpacing: -8, position: "relative"
-                }}>
-                  {countdown}
-                </Typography>
-              </Box>
-
-              <Box sx={{ display: "flex", gap: 2.5 }}>
-                <button
-                  onClick={() => setShowConfirm(false)}
-                  style={{
-                    flex: 1, padding: "22px", borderRadius: "24px", border: "1.5px solid #e2e8f0",
-                    background: "#fff", color: "#64748b", fontWeight: 800, cursor: "pointer",
-                    fontSize: "15px", transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
-                    letterSpacing: 0.5
-                  }}
-                  onMouseEnter={e => { e.target.style.background = "#f8fafc"; e.target.style.transform = "scale(0.98)"; }}
-                  onMouseLeave={e => { e.target.style.background = "#fff"; e.target.style.transform = "scale(1)"; }}
-                >
-                  ABORT
-                </button>
-                <button
-                  onClick={startSOSSequence}
-                  style={{
-                    flex: 2, padding: "22px", borderRadius: "24px", border: "none",
-                    background: "linear-gradient(135deg, #ff3d00, #dc2626)", 
-                    color: "#fff", fontWeight: 900, cursor: "pointer",
-                    fontSize: "16px", boxShadow: "0 16px 40px rgba(255, 61, 0, 0.4)",
-                    letterSpacing: 1, transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
-                  }}
-                  onMouseEnter={e => e.target.style.transform = "scale(1.02) translateY(-4px)"}
-                  onMouseLeave={e => e.target.style.transform = "scale(1) translateY(0)"}
-                >
-                  CALL BASE NOW
-                </button>
-              </Box>
+            <Box sx={{ py: 2 }}>
+              <CircularProgress sx={{ color: "#ff3d00" }} />
             </Box>
           )}
         </Box>

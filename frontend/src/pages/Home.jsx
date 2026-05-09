@@ -186,8 +186,8 @@ function LiveTicker({ reports }) {
                 <span className="tick-type">{RICON[r.type] || "⚠️"} {RLABEL[r.type] || r.type}</span>
                 <span className="tick-loc">📍 {loc}</span>
                 <span className="tick-time">{timeAgo(r.timestamp)}</span>
-                <div className={`bulletin-sentiment-badge ${r.sentiment || (isSevere ? "negative" : "neutral")}`}>
-                  AI SENTIMENT: {(r.sentiment || (isSevere ? "negative" : "neutral")).toUpperCase()}
+                <div className={`bulletin-severity-badge ${isSevere || r.sentiment === "negative" ? "critical" : "moderate"}`}>
+                  SEVERITY: {isSevere ? "CRITICAL" : (r.sentiment === "negative" ? "HIGH" : "MODERATE")}
                 </div>
                 <div className="tick-sep" />
               </div>
@@ -405,8 +405,8 @@ export default function Home() {
       ]);
       if (rRes.status === "fulfilled") {
         const live = (rRes.value.reports || [])
-          // ✅ v18 FIX: isExpired() now has hard 8h timestamp cap — kills "982h ago" reports
-          .filter(r => !isExpired(r) && isHumanReport(r))
+          // ✅ v18.1 FIX: Filter for Navigation, Community (manual), and External (Google Form) reports
+          .filter(r => !isExpired(r) && isHumanReport(r) && (r.source === "navigation" || r.source === "community" || r.source === "external"))
           .sort((a, b) => {
             if (a.severity === "severe" && b.severity !== "severe") return -1;
             if (b.severity === "severe" && a.severity !== "severe") return 1;
@@ -517,10 +517,10 @@ export default function Home() {
 
         .severe-banner{background:#ffebee;border-bottom:1px solid #ef9a9a;padding:7px 0;text-align:center;cursor:pointer;}
         
-        .bulletin-sentiment-badge { font-size: 8px; font-weight: 800; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.05em; display: inline-block; margin-left: 8px; }
-        .bulletin-sentiment-badge.negative { background: rgba(229, 57, 53, 0.1); color: #e53935; border: 1px solid rgba(229, 57, 53, 0.2); }
-        .bulletin-sentiment-badge.positive { background: rgba(67, 160, 71, 0.1); color: #43a047; border: 1px solid rgba(67, 160, 71, 0.2); }
-        .bulletin-sentiment-badge.neutral { background: rgba(144, 164, 174, 0.1); color: #90a4ae; border: 1px solid rgba(144, 164, 174, 0.2); }
+        .bulletin-severity-badge { font-size: 8px; font-weight: 800; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.05em; display: inline-block; margin-left: 8px; }
+        .bulletin-severity-badge.critical { background: rgba(229, 57, 53, 0.1); color: #e53935; border: 1px solid rgba(229, 57, 53, 0.2); }
+        .bulletin-severity-badge.moderate { background: rgba(67, 160, 71, 0.1); color: #43a047; border: 1px solid rgba(67, 160, 71, 0.2); }
+        .bulletin-severity-badge.low { background: rgba(144, 164, 174, 0.1); color: #90a4ae; border: 1px solid rgba(144, 164, 174, 0.2); }
 
         @media(max-width:1024px){.metrics-grid{grid-template-columns:repeat(3,1fr);}.footer-grid{grid-template-columns:1fr 1fr;}}
         @media(max-width:768px){.hero-grid,.about-grid,.contact-grid{grid-template-columns:1fr;gap:40px;}.ic-hero-visual{display:none!important;}.features-grid,.reviews-grid{grid-template-columns:1fr;}.ic-stats-grid{grid-template-columns:repeat(3,1fr);}.metrics-grid{grid-template-columns:repeat(2,1fr);}.footer-grid{grid-template-columns:1fr 1fr;}.container{padding:0 20px;}.section{padding:64px 0;}}
@@ -749,6 +749,9 @@ export default function Home() {
                   <span>{ic}</span>{lb}
                 </a>
               ))}
+              <a className="footer-link" href="/api/docs" target="_blank" rel="noopener noreferrer">
+                <span>📄</span>API Docs
+              </a>
             </div>
 
             <div>

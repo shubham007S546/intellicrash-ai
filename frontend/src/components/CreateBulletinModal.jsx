@@ -17,8 +17,11 @@ export default function CreateBulletinModal({ isOpen, onClose, onPost }) {
 
   const handleCapture = useCallback(() => {
     const imageSrc = webcamRef.current.getScreenshot();
-    setCapturedMedia(imageSrc);
-    setIsCapturing(false);
+    if (imageSrc) {
+      setCapturedMedia(imageSrc); // This is Base64
+      setMediaType('image');
+      setIsCapturing(false);
+    }
   }, [webcamRef]);
 
   const handleStartCaptureClick = useCallback(() => {
@@ -61,15 +64,29 @@ export default function CreateBulletinModal({ isOpen, onClose, onPost }) {
 
   const handleDownload = useCallback(() => {
     if (recordedChunks.length) {
-      const blob = new Blob(recordedChunks, {
-        type: "video/webm"
-      });
-      const url = URL.createObjectURL(blob);
-      setCapturedMedia(url);
-      setRecordedChunks([]);
-      setIsCapturing(false);
+      const blob = new Blob(recordedChunks, { type: "video/webm" });
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCapturedMedia(reader.result); // Base64
+        setRecordedChunks([]);
+        setIsCapturing(false);
+      };
+      reader.readAsDataURL(blob);
     }
   }, [recordedChunks]);
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCapturedMedia(reader.result);
+        setMediaType(file.type.startsWith('video') ? 'video' : 'image');
+        setIsCapturing(false);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = () => {
     if (!title || !description) return;
@@ -176,15 +193,7 @@ export default function CreateBulletinModal({ isOpen, onClose, onPost }) {
                 type="file" 
                 accept="image/*,video/*" 
                 hidden 
-                onChange={(e) => {
-                  const file = e.target.files[0];
-                  if (file) {
-                    const url = URL.createObjectURL(file);
-                    setCapturedMedia(url);
-                    setMediaType(file.type.startsWith('video') ? 'video' : 'image');
-                    setIsCapturing(false);
-                  }
-                }} 
+                onChange={handleFileUpload} 
               />
             </label>
           </div>

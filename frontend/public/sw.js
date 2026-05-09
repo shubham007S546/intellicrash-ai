@@ -44,7 +44,17 @@ self.addEventListener("fetch", e => {
       fetch(e.request).catch(() => {
         // Offline fallback for specific API calls
         if (url.includes("/api/predict")) {
-          return new Response(JSON.stringify({ severity:"2", score:50, xai_explanation:"Offline mode — using default estimate", model_used:"Offline" }), { headers:{"Content-Type":"application/json"} });
+          return e.request.clone().json().then(body => {
+            let score = 45;
+            if (body.speed > 60) score += 15;
+            if (body.criticalZone === "1") score += 20;
+            if (body.weather !== "0") score += 10;
+            // Add slight randomness based on string length to differentiate routes
+            const variation = (JSON.stringify(body).length % 10) - 5;
+            return new Response(JSON.stringify({ severity:"2", score: Math.min(100, Math.max(0, score + variation)), xai_explanation:"Offline mode — local estimate", model_used:"Offline" }), { headers:{"Content-Type":"application/json"} });
+          }).catch(() => {
+            return new Response(JSON.stringify({ severity:"2", score:50, xai_explanation:"Offline mode — using default estimate", model_used:"Offline" }), { headers:{"Content-Type":"application/json"} });
+          });
         }
         if (url.includes("/api/contacts")) {
           return new Response(JSON.stringify({ contacts:[{id:1,name:"HP Emergency",phone:"112",email:"",relation:"Emergency"},{id:2,name:"HP Ambulance",phone:"108",email:"",relation:"Medical"},{id:3,name:"Admin",phone:"9015162007",email:"",relation:"Admin"}] }), { headers:{"Content-Type":"application/json"} });

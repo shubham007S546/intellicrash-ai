@@ -1,7 +1,7 @@
 // ================================================================
-// server.js — SafeSignal SOS  v7  REAL GPS
-// ✅ FIXED: No more hardcoded lat:31.1048 lon:77.1734 fallback
-//           Server now REJECTS /api/sos with missing/default coords
+// server.js — SafeSignal SOS  v8  REAL GPS  (Twilio SMS + Gmail only)
+// ✅ FIXED: Removed Infobip WhatsApp — only Twilio SMS + Gmail active
+//           No more hardcoded lat/lon fallback
 //           All coord defaults removed — client MUST send real GPS
 // ================================================================
 "use strict";
@@ -24,16 +24,11 @@ const {
   TWILIO_TOKEN,
   TWILIO_FROM,
 
-  INFOBIP_API_KEY,
-  INFOBIP_BASE_URL,
-  INFOBIP_FROM_NUMBER,
-
   GMAIL_USER,
   GMAIL_PASS,
 
   ADMIN_PHONE,
   ADMIN_EMAIL,
-  ADMIN_WHATSAPP,
 
   PORT = 3001,
 } = process.env;
@@ -41,20 +36,16 @@ const {
 // ── Boot status ───────────────────────────────────────────────────
 function bootCheck() {
   console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("  SafeSignal SOS v7 — Channel Status");
+  console.log("  SafeSignal SOS v8 — Channel Status");
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log(`  Twilio SMS   : ${TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM
     ? "✅ READY  from=" + TWILIO_FROM
     : "❌ MISSING — check TWILIO_SID / TWILIO_TOKEN / TWILIO_FROM"}`);
-  console.log(`  Infobip WA   : ${INFOBIP_API_KEY && INFOBIP_BASE_URL
-    ? "✅ READY  base=" + INFOBIP_BASE_URL
-    : "❌ MISSING — check INFOBIP_API_KEY / INFOBIP_BASE_URL"}`);
   console.log(`  Gmail        : ${GMAIL_USER && GMAIL_PASS
     ? "✅ READY  user=" + GMAIL_USER
     : "❌ MISSING — check GMAIL_USER / GMAIL_PASS"}`);
-  console.log(`  Admin Phone  : ${ADMIN_PHONE    || "⚠️  NOT SET"}`);
-  console.log(`  Admin WA     : ${ADMIN_WHATSAPP || "⚠️  NOT SET"}`);
-  console.log(`  Admin Email  : ${ADMIN_EMAIL    || "⚠️  NOT SET"}`);
+  console.log(`  Admin Phone  : ${ADMIN_PHONE || "⚠️  NOT SET"}`);
+  console.log(`  Admin Email  : ${ADMIN_EMAIL || "⚠️  NOT SET"}`);
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 }
 
@@ -82,8 +73,7 @@ function haversine(la1, lo1, la2, lo2) {
   return +(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))).toFixed(1);
 }
 
-// ── Validate that coords look real (not zero, not old Shimla default) ──
-//    Returns an error string, or null if OK.
+// ── Validate that coords look real (not zero, not outside HP) ──
 function validateCoords(lat, lon) {
   const la = parseFloat(lat);
   const lo = parseFloat(lon);
@@ -92,7 +82,6 @@ function validateCoords(lat, lon) {
   if (la === 0   && lo === 0)        return "lat/lon are (0,0) — GPS not acquired";
 
   // Himachal Pradesh bounding box (generous)
-  // lat 30.2–33.2, lon 75.5–79.0
   if (la < 30.2 || la > 33.2)       return `lat ${la} is outside Himachal Pradesh`;
   if (lo < 75.5 || lo > 79.0)       return `lon ${lo} is outside Himachal Pradesh`;
 
@@ -179,60 +168,7 @@ async function sendSMS(rawTo, text) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  2. INFOBIP WHATSAPP
-// ══════════════════════════════════════════════════════════════════
-async function sendWhatsApp(rawTo, text) {
-  const to = toDigits(rawTo);
-  if (!INFOBIP_API_KEY || !INFOBIP_BASE_URL) {
-    console.warn(`[WA SKIP] Infobip not configured — to=${to}`);
-    return;
-  }
-  if (!to) { console.warn("[WA SKIP] Bad number:", rawTo); return; }
-
-  const from = toDigits(INFOBIP_FROM_NUMBER) || "";
-  if (!from) { console.warn("[WA SKIP] INFOBIP_FROM_NUMBER not set"); return; }
-
-  const payload = JSON.stringify({
-    messages: [{ from, to, content: { text } }],
-  });
-
-  const hostname = (INFOBIP_BASE_URL || "")
-    .replace(/^https?:\/\//, "")
-    .replace(/\/+$/, "");
-
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname,
-      path:   "/whatsapp/1/message/text",
-      method: "POST",
-      headers: {
-        "Authorization":  `App ${INFOBIP_API_KEY}`,
-        "Content-Type":   "application/json",
-        "Accept":         "application/json",
-        "Content-Length": Buffer.byteLength(payload),
-      },
-    }, res => {
-      let raw = "";
-      res.on("data", d => raw += d);
-      res.on("end", () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          console.log(`✅ [Infobip WA] to=${to} status=${res.statusCode}`);
-          resolve(JSON.parse(raw));
-        } else {
-          const msg = `Infobip WA ${res.statusCode}: ${raw.slice(0, 300)}`;
-          console.error(`❌ [Infobip WA] to=${to} | ${msg}`);
-          reject(new Error(msg));
-        }
-      });
-    });
-    req.on("error", e => { console.error(`❌ [Infobip WA] network: ${e.message}`); reject(e); });
-    req.write(payload);
-    req.end();
-  });
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  3. GMAIL EMAIL
+//  2. GMAIL EMAIL
 // ══════════════════════════════════════════════════════════════════
 let _mailer = null;
 function getMailer() {
@@ -349,11 +285,10 @@ async function sendEmail(to, subject, data) {
 // ══════════════════════════════════════════════════════════════════
 
 // ── POST /api/sos ─────────────────────────────────────────────────
-// ✅ FIX: No hardcoded fallback lat/lon — client MUST send real GPS
 app.post("/api/sos", (req, res) => {
   const {
-    lat,       // REQUIRED — must be real GPS from client
-    lon,       // REQUIRED — must be real GPS from client
+    lat,
+    lon,
     gpsAccuracy,
     userName,
     severity   = "HIGH",
@@ -365,10 +300,10 @@ app.post("/api/sos", (req, res) => {
     contacts   = [],
   } = req.body;
 
-  // ── Validate GPS coords — reject if missing or fake ───────────
+  // ── Validate GPS coords ────────────────────────────────────────
   const coordError = validateCoords(lat, lon);
   if (coordError) {
-    console.error(`[SOS REJECTED] Bad coords from client: lat=${lat} lon=${lon} — ${coordError}`);
+    console.error(`[SOS REJECTED] Bad coords: lat=${lat} lon=${lon} — ${coordError}`);
     return res.status(400).json({
       ok: false,
       error: `Invalid location: ${coordError}. Please ensure GPS is enabled and try again.`,
@@ -384,30 +319,23 @@ app.post("/api/sos", (req, res) => {
 
   const hospitals = nearestHospitals(la, lo);
 
-  // Instant ACK with real nearby hospitals
+  // Instant ACK
   res.json({ ok: true, queued: true, hospitals, alertCount: contacts.length });
 
   const mapUrl  = mapsLink || `https://maps.google.com/?q=${la},${lo}`;
   const accText = gpsAccuracy ? ` (±${gpsAccuracy}m)` : "";
   const smsBody = `🚨 SOS from ${userName || "Unknown"} | Risk: ${severity} | Speed: ${speed || 0} km/h\nGPS${accText}: ${la.toFixed(5)},${lo.toFixed(5)}\nLocation: ${mapUrl}\nCall 112 NOW!`;
-  const waBody  = `🚨 *EMERGENCY SOS*\n*From:* ${userName || "Unknown"}\n*Risk:* ${severity} (${riskScore}/100)${speed ? `\n*Speed:* ${speed} km/h` : ""}${isAutoCrash ? "\n⚠️ *AUTO CRASH DETECTED*" : ""}\n\n📍 *GPS${accText}:*\n${la.toFixed(5)}, ${lo.toFixed(5)}\n${mapUrl}\n\n🆘 Call *112* immediately!`;
   const subject = `🚨 SOS from ${userName || "Unknown"} — ${severity} Risk`;
 
-  // Notify all contacts
+  // Notify all contacts via SMS + Email
   for (const c of contacts) {
-    if (c.phone) {
-      bg(`SMS→${c.phone}`,   () => sendSMS(c.phone, smsBody));
-      bg(`WA→${c.phone}`,    () => sendWhatsApp(c.phone, waBody));
-    }
-    if (c.email) {
-      bg(`Email→${c.email}`, () => sendEmail(c.email, subject, { ...req.body, lat: la, lon: lo, mapsLink: mapUrl }));
-    }
+    if (c.phone) bg(`SMS→${c.phone}`, () => sendSMS(c.phone, smsBody));
+    if (c.email) bg(`Email→${c.email}`, () => sendEmail(c.email, subject, { ...req.body, lat: la, lon: lo, mapsLink: mapUrl }));
   }
 
   // Admin fallback
-  if (ADMIN_PHONE)    bg("SMS→admin",   () => sendSMS(ADMIN_PHONE, smsBody));
-  if (ADMIN_WHATSAPP) bg("WA→admin",    () => sendWhatsApp(ADMIN_WHATSAPP, waBody));
-  if (ADMIN_EMAIL)    bg("Email→admin", () => sendEmail(ADMIN_EMAIL, subject, { ...req.body, lat: la, lon: lo, mapsLink: mapUrl }));
+  if (ADMIN_PHONE) bg("SMS→admin",   () => sendSMS(ADMIN_PHONE, smsBody));
+  if (ADMIN_EMAIL) bg("Email→admin", () => sendEmail(ADMIN_EMAIL, subject, { ...req.body, lat: la, lon: lo, mapsLink: mapUrl }));
 });
 
 // ── POST /api/send-sms ────────────────────────────────────────────
@@ -416,14 +344,6 @@ app.post("/api/send-sms", (req, res) => {
   if (!to || !message) return res.status(400).json({ error: "to and message required" });
   res.json({ ok: true, queued: true });
   bg("SMS→manual", () => sendSMS(to, message));
-});
-
-// ── POST /api/send-whatsapp ───────────────────────────────────────
-app.post("/api/send-whatsapp", (req, res) => {
-  const { to, message } = req.body;
-  if (!to || !message) return res.status(400).json({ error: "to and message required" });
-  res.json({ ok: true, queued: true });
-  bg("WA→manual", () => sendWhatsApp(to, message));
 });
 
 // ── POST /api/send-email ──────────────────────────────────────────
@@ -436,7 +356,6 @@ app.post("/api/send-email", (req, res) => {
 });
 
 // ── GET /api/nearby ───────────────────────────────────────────────
-// ✅ FIX: No hardcoded Shimla fallback — requires real lat/lon
 app.get("/api/nearby", async (req, res) => {
   const lat = parseFloat(req.query.lat);
   const lon = parseFloat(req.query.lon);
@@ -462,22 +381,18 @@ app.get("/api/nearby", async (req, res) => {
 // ── GET /api/health ───────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
   res.json({
-    ok:             true,
-    version:        "v7-real-gps",
-    ts:             new Date().toISOString(),
-    uptime_s:       Math.round(process.uptime()),
-    twilio_sms:     !!(TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM),
-    twilio_from:    TWILIO_FROM        || "NOT SET",
-    infobip_wa:     !!(INFOBIP_API_KEY && INFOBIP_BASE_URL),
-    infobip_base:   INFOBIP_BASE_URL   || "NOT SET",
-    infobip_from:   INFOBIP_FROM_NUMBER|| "NOT SET",
-    gmail:          !!getMailer(),
-    gmail_user:     GMAIL_USER         || "NOT SET",
-    admin_phone:    ADMIN_PHONE        || "NOT SET",
-    admin_whatsapp: ADMIN_WHATSAPP     || "NOT SET",
-    admin_email:    ADMIN_EMAIL        || "NOT SET",
-    hospital_db:    HOSPITALS.length,
-    gps_policy:     "client_must_send_real_coords — no server fallback",
+    ok:          true,
+    version:     "v8-sms-email-only",
+    ts:          new Date().toISOString(),
+    uptime_s:    Math.round(process.uptime()),
+    twilio_sms:  !!(TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM),
+    twilio_from: TWILIO_FROM  || "NOT SET",
+    gmail:       !!getMailer(),
+    gmail_user:  GMAIL_USER   || "NOT SET",
+    admin_phone: ADMIN_PHONE  || "NOT SET",
+    admin_email: ADMIN_EMAIL  || "NOT SET",
+    hospital_db: HOSPITALS.length,
+    gps_policy:  "client_must_send_real_coords — no server fallback",
   });
 });
 
@@ -488,21 +403,18 @@ app.get("/api/logs", (_req, res) => {
 
 // ── GET /api/test ─────────────────────────────────────────────────
 app.get("/api/test", (_req, res) => {
-  // Test uses a real HP coordinate (IGMC Shimla) — not a zero/fake
   const testLat = 31.1048, testLon = 77.1734;
   const mapUrl  = `https://maps.google.com/?q=${testLat},${testLon}`;
-  const smsBody = `🚨 [TEST] SafeSignal SOS v7 check — channels working | ${mapUrl}`;
-  const waBody  = `🚨 *[TEST] SafeSignal SOS v7*\n\nSystem check — all channels OK.\n📍 ${mapUrl}`;
-  const subject = "🚨 [TEST] SafeSignal SOS v7 System Check";
+  const smsBody = `🚨 [TEST] SafeSignal SOS v8 check — channels working | ${mapUrl}`;
+  const subject = "🚨 [TEST] SafeSignal SOS v8 System Check";
   const testData = { userName:"TEST", severity:"HIGH", riskScore:99, message:"System test", lat:testLat, lon:testLon, mapsLink: mapUrl };
 
   res.json({ ok: true, message: "Test alerts fired — check console + your phone/email" });
 
-  if (ADMIN_PHONE)    bg("SMS→test",   () => sendSMS(ADMIN_PHONE, smsBody));
-  if (ADMIN_WHATSAPP) bg("WA→test",    () => sendWhatsApp(ADMIN_WHATSAPP, waBody));
-  if (ADMIN_EMAIL)    bg("Email→test", () => sendEmail(ADMIN_EMAIL, subject, testData));
+  if (ADMIN_PHONE) bg("SMS→test",   () => sendSMS(ADMIN_PHONE, smsBody));
+  if (ADMIN_EMAIL) bg("Email→test", () => sendEmail(ADMIN_EMAIL, subject, testData));
 
-  console.log("🧪 [TEST] Fired to admin channels");
+  console.log("🧪 [TEST] Fired to admin channels (SMS + Email)");
 });
 
 // ── Catch-all → React SPA ─────────────────────────────────────────
@@ -520,7 +432,7 @@ process.on("unhandledRejection", r => console.error("[UnhandledRejection]", r));
 
 // ── Start ─────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`\n🚨 SafeSignal SOS v7  →  http://localhost:${PORT}`);
+  console.log(`\n🚨 SafeSignal SOS v8  →  http://localhost:${PORT}`);
   console.log(`   Health : GET  /api/health`);
   console.log(`   Test   : GET  /api/test`);
   console.log(`   SOS    : POST /api/sos  (lat+lon REQUIRED)`);

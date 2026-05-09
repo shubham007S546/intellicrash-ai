@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+      - sos
+    restart: always
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    restart: always
+
+  sos:
+    build:
+      context: .
+      dockerfile: Dockerfile.sos
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: always
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --url http://frontend:80
+    depends_on:
+      - frontend
+    restart: always
+
+volumes:
+  data:
+    driver: local

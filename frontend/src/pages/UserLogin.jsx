@@ -139,30 +139,48 @@ export default function UserLogin() {
         {/* Header Section */}
         <div style={{ padding: "40px 40px 20px", textAlign: "center" }}>
           <motion.div 
-            whileHover={{ scale: 1.1, rotate: 5 }}
-            style={{ width: 64, height: 64, background: "linear-gradient(135deg, #ea580c, #dc2626)", borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", boxShadow: "0 10px 25px rgba(234, 88, 12, 0.3)" }}
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+            whileHover={{ scale: 1.05, rotate: 2 }}
+            style={{ width: 72, height: 72, background: "linear-gradient(135deg, #ea580c, #dc2626)", borderRadius: 20, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", boxShadow: "0 12px 30px rgba(234, 88, 12, 0.4)", position: "relative" }}
           >
-            <Shield color="#fff" size={32} />
+            <Shield color="#fff" size={36} />
+            <motion.div 
+              animate={{ opacity: [0, 1, 0] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              style={{ position: "absolute", inset: -4, border: "2px solid #ea580c", borderRadius: 24, opacity: 0.5 }}
+            />
           </motion.div>
-          <h1 style={{ fontSize: 28, fontWeight: 900, color: "#0f172a", margin: 0, letterSpacing: "-1px" }}>
-            {tab === 0 ? "Welcome Back" : "Secure Your Journey"}
-          </h1>
-          <p style={{ fontSize: 14, color: "#64748b", marginTop: 8, fontWeight: 500 }}>
-            {tab === 0 ? "Sign in to access your safety dashboard" : "Join the HP road safety community"}
-          </p>
+          <motion.h1 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            style={{ fontSize: 32, fontWeight: 900, color: "#0f172a", margin: 0, letterSpacing: "-1.5px", fontFamily: "'Syne', sans-serif" }}
+          >
+            {tab === 0 ? "Welcome Back" : "Create Account"}
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            style={{ fontSize: 14, color: "#64748b", marginTop: 10, fontWeight: 500, lineHeight: 1.5 }}
+          >
+            {tab === 0 ? "Access your personalized safety dashboard and rewards." : "Join the world's first AI-driven mountain road safety network."}
+          </motion.p>
         </div>
 
         {/* Tab Switcher */}
-        <div style={{ display: "flex", padding: "0 40px", gap: 20 }}>
+        <div style={{ display: "flex", padding: "0 40px", gap: 0, background: "#f8fafc", margin: "0 40px", borderRadius: 16, padding: 4 }}>
           <button 
             onClick={() => { setTab(0); setError(""); setInfo(""); }}
-            style={{ flex: 1, padding: "12px 0", background: "none", border: "none", borderBottom: `2px solid ${tab === 0 ? "#ea580c" : "transparent"}`, color: tab === 0 ? "#ea580c" : "#94a3b8", fontWeight: 700, fontSize: 14, cursor: "pointer", transition: "0.2s" }}
+            style={{ flex: 1, padding: "10px 0", background: tab === 0 ? "#fff" : "transparent", border: "none", borderRadius: 12, color: tab === 0 ? "#ea580c" : "#64748b", fontWeight: 700, fontSize: 13, cursor: "pointer", transition: "0.3s", boxShadow: tab === 0 ? "0 4px 12px rgba(0,0,0,0.05)" : "none" }}
           >
             Sign In
           </button>
           <button 
             onClick={() => { setTab(1); setError(""); setInfo(""); }}
-            style={{ flex: 1, padding: "12px 0", background: "none", border: "none", borderBottom: `2px solid ${tab === 1 ? "#ea580c" : "transparent"}`, color: tab === 1 ? "#ea580c" : "#94a3b8", fontWeight: 700, fontSize: 14, cursor: "pointer", transition: "0.2s" }}
+            style={{ flex: 1, padding: "10px 0", background: tab === 1 ? "#fff" : "transparent", border: "none", borderRadius: 12, color: tab === 1 ? "#ea580c" : "#64748b", fontWeight: 700, fontSize: 13, cursor: "pointer", transition: "0.3s", boxShadow: tab === 1 ? "0 4px 12px rgba(0,0,0,0.05)" : "none" }}
           >
             Sign Up
           </button>
@@ -172,45 +190,89 @@ export default function UserLogin() {
           <AnimatePresence mode="wait">
             <motion.div
               key={tab}
-              initial={{ opacity: 0, x: 10 }}
+              initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.3 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.4, ease: "anticipate" }}
             >
-              {error && <div style={{ padding: "12px 16px", borderRadius: 12, background: "#fef2f2", color: "#b91c1c", fontSize: 13, fontWeight: 600, marginBottom: 20, border: "1px solid #fee2e2" }}>{error}</div>}
-              {info && <div style={{ padding: "12px 16px", borderRadius: 12, background: "#f0fdf4", color: "#166534", fontSize: 13, fontWeight: 600, marginBottom: 20, border: "1px solid #dcfce7" }}>{info}</div>}
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }} 
+                  animate={{ opacity: 1, scale: 1 }}
+                  style={{ padding: "14px 18px", borderRadius: 16, background: "#fff1f2", color: "#e11d48", fontSize: 13, fontWeight: 700, marginBottom: 24, border: "1px solid rgba(225, 29, 72, 0.1)", display: "flex", alignItems: "center", gap: 10 }}
+                >
+                  <span style={{ fontSize: 16 }}>⚠️</span> {error}
+                </motion.div>
+              )}
+              {info && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }} 
+                  animate={{ opacity: 1, scale: 1 }}
+                  style={{ padding: "14px 18px", borderRadius: 16, background: "#f0fdf4", color: "#166534", fontSize: 13, fontWeight: 700, marginBottom: 24, border: "1px solid rgba(22, 101, 52, 0.1)", display: "flex", alignItems: "center", gap: 10 }}
+                >
+                  <span style={{ fontSize: 16 }}>✅</span> {info}
+                </motion.div>
+              )}
 
-              <form onSubmit={tab === 0 ? handleSignIn : handleSignUp} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <form onSubmit={tab === 0 ? handleSignIn : handleSignUp} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                 {tab === 1 && (
                   <div style={{ position: "relative" }}>
-                    <User style={{ position: "absolute", left: 14, top: 14, color: "#94a3b8" }} size={18} />
-                    <input style={{ width: "100%", padding: "14px 14px 14px 44px", borderRadius: 14, border: "1.5px solid #e2e8f0", outline: "none", fontSize: 14, fontWeight: 500, background: "#fff", boxSizing: "border-box" }} placeholder="Full Name" value={name} onChange={(e) => setName(e.target.value)} />
+                    <User style={{ position: "absolute", left: 16, top: 16, color: "#94a3b8" }} size={20} />
+                    <input 
+                      style={{ width: "100%", padding: "16px 16px 16px 48px", borderRadius: 18, border: "2px solid #f1f5f9", outline: "none", fontSize: 14, fontWeight: 600, background: "#f8fafc", boxSizing: "border-box", transition: "all 0.2s" }} 
+                      placeholder="Full Name" 
+                      value={name} 
+                      onChange={(e) => setName(e.target.value)}
+                      onFocus={(e) => e.target.style.borderColor = "#ea580c"}
+                      onBlur={(e) => e.target.style.borderColor = "#f1f5f9"}
+                    />
                   </div>
                 )}
                 
                 <div style={{ position: "relative" }}>
-                  <Mail style={{ position: "absolute", left: 14, top: 14, color: "#94a3b8" }} size={18} />
-                  <input type="email" required style={{ width: "100%", padding: "14px 14px 14px 44px", borderRadius: 14, border: "1.5px solid #e2e8f0", outline: "none", fontSize: 14, fontWeight: 500, background: "#fff", boxSizing: "border-box" }} placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  <Mail style={{ position: "absolute", left: 16, top: 16, color: "#94a3b8" }} size={20} />
+                  <input 
+                    type="email" required 
+                    style={{ width: "100%", padding: "16px 16px 16px 48px", borderRadius: 18, border: "2px solid #f1f5f9", outline: "none", fontSize: 14, fontWeight: 600, background: "#f8fafc", boxSizing: "border-box", transition: "all 0.2s" }} 
+                    placeholder="Email Address" 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    onFocus={(e) => e.target.style.borderColor = "#ea580c"}
+                    onBlur={(e) => e.target.style.borderColor = "#f1f5f9"}
+                  />
                 </div>
 
                 <div style={{ position: "relative" }}>
-                  <Lock style={{ position: "absolute", left: 14, top: 14, color: "#94a3b8" }} size={18} />
-                  <input type="password" required style={{ width: "100%", padding: "14px 14px 14px 44px", borderRadius: 14, border: "1.5px solid #e2e8f0", outline: "none", fontSize: 14, fontWeight: 500, background: "#fff", boxSizing: "border-box" }} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                  <Lock style={{ position: "absolute", left: 16, top: 16, color: "#94a3b8" }} size={20} />
+                  <input 
+                    type="password" required 
+                    style={{ width: "100%", padding: "16px 16px 16px 48px", borderRadius: 18, border: "2px solid #f1f5f9", outline: "none", fontSize: 14, fontWeight: 600, background: "#f8fafc", boxSizing: "border-box", transition: "all 0.2s" }} 
+                    placeholder="Password" 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    onFocus={(e) => e.target.style.borderColor = "#ea580c"}
+                    onBlur={(e) => e.target.style.borderColor = "#f1f5f9"}
+                  />
                 </div>
 
-                <motion.button
+                <motion.button 
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   disabled={busy}
-                  style={{ width: "100%", padding: "16px", borderRadius: 16, background: "linear-gradient(135deg, #ea580c, #dc2626)", color: "#fff", fontSize: 15, fontWeight: 800, border: "none", cursor: "pointer", boxShadow: "0 10px 20px rgba(234, 88, 12, 0.2)", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+                  type="submit"
+                  style={{ width: "100%", padding: "18px", borderRadius: 18, background: "linear-gradient(135deg, #ea580c, #dc2626)", color: "#fff", border: "none", fontSize: 15, fontWeight: 800, cursor: busy ? "not-allowed" : "pointer", boxShadow: "0 10px 25px rgba(234, 88, 12, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, transition: "0.3s" }}
                 >
-                  {loading ? "Processing..." : (tab === 0 ? "Sign In" : "Get Started")} <ArrowRight size={18} />
+                  {loading ? <CircularProgress size={20} sx={{ color: "#fff" }} /> : (
+                    <>
+                      {tab === 0 ? "Sign In to Dashboard" : "Create My Account"}
+                      <ArrowRight size={18} />
+                    </>
+                  )}
                 </motion.button>
               </form>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "24px 0", color: "#cbd5e1" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, margin: "24px 0" }}>
                 <div style={{ flex: 1, height: 1, background: "#e2e8f0" }} />
-                <span style={{ fontSize: 12, fontWeight: 600 }}>Social Access</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 1 }}>Social Access</span>
                 <div style={{ flex: 1, height: 1, background: "#e2e8f0" }} />
               </div>
 

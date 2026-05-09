@@ -27,8 +27,20 @@ function useAuth() {
         const { supabase } = await import("../services/supabase");
         const { data } = await supabase.auth.getSession();
         setUser(data?.session?.user || null);
+        if (data?.session?.user) {
+          localStorage.setItem("ic_user", JSON.stringify(data.session.user));
+          localStorage.removeItem("ic_guest");
+        } else {
+          localStorage.removeItem("ic_user");
+        }
         const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
           setUser(session?.user || null);
+          if (session?.user) {
+            localStorage.setItem("ic_user", JSON.stringify(session.user));
+            localStorage.removeItem("ic_guest");
+          } else {
+            localStorage.removeItem("ic_user");
+          }
         });
         sub = listener?.subscription;
       } catch { setUser(null); }
@@ -85,7 +97,10 @@ function UserMenu({ user, signOut }) {
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 11, fontWeight: 800, color: "#fff", flexShrink: 0,
         }}>{initials}</div>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", maxWidth: 88, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{username}</span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 0, maxWidth: 120 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%", textAlign: "left" }}>{username}</span>
+          <span style={{ fontSize: 9, color: "#9898a8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{email}</span>
+        </div>
         <span style={{ fontSize: 10, color: "#9898a8", display: "inline-block", transition: "transform .18s", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
       </button>
 
@@ -241,30 +256,8 @@ export default function Navbar() {
                 })}
               </div>
 
-              {/* Right: SOS + auth */}
+              {/* Right: auth */}
               <div className="ic7-desktop" style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-                <button 
-                  onClick={() => window.dispatchEvent(new Event("trigger_intellicrash_sos"))}
-                  style={{
-                    background: "#ef4444",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "30px",
-                    padding: "8px 16px",
-                    fontSize: "12px",
-                    fontWeight: "900",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    boxShadow: "0 4px 12px rgba(239, 68, 68, 0.3)",
-                    transition: "transform 0.1s"
-                  }}
-                  onMouseDown={e => e.currentTarget.style.transform = "scale(0.95)"}
-                  onMouseUp={e => e.currentTarget.style.transform = "scale(1)"}
-                >
-                  <span style={{ fontSize: 16 }}>🆘</span> QUICK SOS
-                </button>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <ThemeToggle />
                   {!loading && (

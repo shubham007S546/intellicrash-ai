@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Box, Typography, TextField, IconButton, Paper, Avatar, Chip } from "@mui/material";
 import { Send, Close, SmartToy, Person, AutoAwesome } from "@mui/icons-material";
 
@@ -109,7 +109,8 @@ export default function ChatBot({ onClose = () => {} }) {
         right: 18,
         zIndex: 9900,
         width: { xs: "calc(100vw - 36px)", sm: 380 },
-        maxHeight: "70vh",
+        height: 600,
+        maxHeight: "calc(100vh - 120px)",
         display: "flex",
         flexDirection: "column",
         borderRadius: 3,
@@ -182,6 +183,7 @@ export default function ChatBot({ onClose = () => {} }) {
       <Box
         sx={{
           flex: 1,
+          minHeight: 0,
           overflowY: "auto",
           p: 2,
           display: "flex",
@@ -340,6 +342,7 @@ export default function ChatBot({ onClose = () => {} }) {
           display: "flex",
           gap: 1,
           alignItems: "center",
+          flexShrink: 0,
         }}
       >
         <TextField
@@ -352,12 +355,18 @@ export default function ChatBot({ onClose = () => {} }) {
           disabled={loading}
           multiline
           maxRows={3}
+          inputProps={{ style: { color: "#1f2937" } }}
           sx={{
             "& .MuiOutlinedInput-root": {
               borderRadius: 3,
               fontSize: 13,
+              backgroundColor: "#fff",
               "&.Mui-focused fieldset": { borderColor: "#f97316" },
             },
+            "& .MuiInputBase-input::placeholder": {
+              color: "#9ca3af",
+              opacity: 1,
+            }
           }}
         />
         <IconButton

@@ -1,0 +1,11 @@
+﻿node_modules
+__pycache__
+.git
+*.log
+.env
+
+.venv
+myenv
+python/.venv
+frontend/node_modules
+sos-server/node_modules
