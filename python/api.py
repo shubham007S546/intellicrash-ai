@@ -198,9 +198,6 @@ def generate_headline_nlp(content: str) -> str:
         except: pass
     
     # Fallback to local logic if Groq fails or is disabled
-    if "avgSev=" in content: return "Safety System Advisory"
-    return content[:45] + "..." if len(content) > 45 else content
-
     content_lower = content.lower()
     
     # 1. Detect Incident Type
@@ -584,8 +581,8 @@ class ContactModel(BaseModel):
 class ReportModel(BaseModel):
     title:       Optional[str] = Field(None, max_length=200)
     type:        str       = Field("accident")
-    lat:         float     = Field(..., ge=29.0, le=34.0)
-    lon:         float     = Field(..., ge=75.0, le=79.0)
+    lat:         float     = Field(31.1048, ge=29.0, le=34.0)
+    lon:         float     = Field(77.1734, ge=75.0, le=79.0)
     description: str       = Field("", max_length=2000)
     landmark:    str       = Field("", max_length=500)
     road:        str       = Field("", max_length=100)
