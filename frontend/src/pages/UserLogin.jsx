@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../services/supabase";
 import { Shield, Mail, Lock, User, ArrowRight, Chrome, Github } from "lucide-react";
+import { CircularProgress } from "@mui/material";
 
 /* ── OAuth Icons ─────────────────────────────────────────────────────────── */
 const GoogleIcon = () => <Chrome size={18} />;
@@ -96,7 +97,7 @@ export default function UserLogin() {
 
   const handleGuest = () => {
     localStorage.setItem("ic_guest", "true");
-    navigate("/", { replace: true });
+    navigate(redirectTo, { replace: true });
   };
 
   const busy = loading || !!providerLoading;
@@ -171,7 +172,7 @@ export default function UserLogin() {
         </div>
 
         {/* Tab Switcher */}
-        <div style={{ display: "flex", padding: "0 40px", gap: 0, background: "#f8fafc", margin: "0 40px", borderRadius: 16, padding: 4 }}>
+        <div style={{ display: "flex", gap: 0, background: "#f8fafc", margin: "0 40px", borderRadius: 16, padding: 4 }}>
           <button 
             onClick={() => { setTab(0); setError(""); setInfo(""); }}
             style={{ flex: 1, padding: "10px 0", background: tab === 0 ? "#fff" : "transparent", border: "none", borderRadius: 12, color: tab === 0 ? "#ea580c" : "#64748b", fontWeight: 700, fontSize: 13, cursor: "pointer", transition: "0.3s", boxShadow: tab === 0 ? "0 4px 12px rgba(0,0,0,0.05)" : "none" }}

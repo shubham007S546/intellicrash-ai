@@ -12,18 +12,20 @@ export const CRITICAL_ZONES = [
   // ══════════════════════════════════════════════════════════
   // HOSPITALS & MEDICAL (slow to 30 km/h)
   // ══════════════════════════════════════════════════════════
-  { id:"h1",  lat:31.1048,  lon:77.1734,  name:"IGMC Shimla",              type:"hospital",  warn:"Hospital zone — reduce to 30 km/h, ambulance access",       radius:400,  speedLimit:30 },
-  { id:"h2",  lat:31.0995,  lon:77.1661,  name:"DDU Hospital Shimla",      type:"hospital",  warn:"Hospital zone — 30 km/h, no honking",                       radius:350,  speedLimit:30 },
-  { id:"h3",  lat:31.7088,  lon:76.9330,  name:"Zonal Hospital Mandi",     type:"hospital",  warn:"Hospital zone — 30 km/h",                                   radius:350,  speedLimit:30 },
-  { id:"h4",  lat:31.9578,  lon:77.1095,  name:"District Hospital Kullu",  type:"hospital",  warn:"Hospital zone — 30 km/h",                                   radius:300,  speedLimit:30 },
-  { id:"h5",  lat:32.0947,  lon:76.1022,  name:"DDU Hospital Dharamshala", type:"hospital",  warn:"Hospital zone — 30 km/h",                                   radius:300,  speedLimit:30 },
-  { id:"h6",  lat:30.9050,  lon:77.0950,  name:"Civil Hospital Solan",     type:"hospital",  warn:"Hospital zone — 30 km/h",                                   radius:300,  speedLimit:30 },
-  { id:"h7",  lat:30.9237,  lon:76.7980,  name:"Civil Hospital Baddi",     type:"hospital",  warn:"Hospital zone — 30 km/h",                                   radius:250,  speedLimit:30 },
-  { id:"h8",  lat:31.5349,  lon:76.9009,  name:"Regional Hospital Sundernagar", type:"hospital", warn:"Hospital zone — 30 km/h",                              radius:280,  speedLimit:30 },
-  { id:"h9",  lat:32.2200,  lon:76.3200,  name:"Civil Hospital Palampur",  type:"hospital",  warn:"Hospital zone — 30 km/h",                                   radius:250,  speedLimit:30 },
-  { id:"h10", lat:30.4497,  lon:77.5666,  name:"Civil Hospital Poanta Sahib", type:"hospital", warn:"Hospital zone — 30 km/h",                                radius:250,  speedLimit:30 },
-  { id:"h11", lat:32.5500,  lon:76.1200,  name:"District Hospital Chamba", type:"hospital",  warn:"Hospital zone — 30 km/h",                                   radius:280,  speedLimit:30 },
-  { id:"h12", lat:31.4700,  lon:76.2700,  name:"Civil Hospital Una",       type:"hospital",  warn:"Hospital zone — 30 km/h",                                   radius:250,  speedLimit:30 },
+  { id:"h1",  lat:31.1048,  lon:77.1734,  name:"IGMC Shimla",              type:"hospital",  warn:"Tertiary Care — IGMC Shimla nearby. Specialized trauma center.", radius:500,  speedLimit:30, level:1, beds:710 },
+  { id:"h2",  lat:31.0995,  lon:77.1661,  name:"DDU Hospital Shimla",      type:"hospital",  warn:"Secondary Care — DDU Hospital Shimla. Multi-specialty.",    radius:350,  speedLimit:30, level:2, beds:300 },
+  { id:"h3",  lat:31.7088,  lon:76.9330,  name:"Zonal Hospital Mandi",     type:"hospital",  warn:"District Trauma Center — Zonal Hospital Mandi.",           radius:350,  speedLimit:30, level:2, beds:250 },
+  { id:"h4",  lat:31.9578,  lon:77.1095,  name:"District Hospital Kullu",  type:"hospital",  warn:"District Hospital Kullu — Secondary medical care.",         radius:300,  speedLimit:30, level:2, beds:200 },
+  { id:"h5",  lat:32.0947,  lon:76.1022,  name:"DDU Hospital Dharamshala", type:"hospital",  warn:"DDU Dharamshala — Critical care & diagnostics available.",  radius:300,  speedLimit:30, level:2, beds:220 },
+  { id:"h6",  lat:30.9050,  lon:77.0950,  name:"Civil Hospital Solan",     type:"hospital",  warn:"Civil Hospital Solan — Primary/Secondary care.",            radius:300,  speedLimit:30, level:2, beds:150 },
+  { id:"h7",  lat:30.9237,  lon:76.7980,  name:"Civil Hospital Baddi",     type:"hospital",  warn:"Hospital zone — ambulance access.",                        radius:250,  speedLimit:30, level:3, beds:100 },
+  { id:"h8",  lat:31.5349,  lon:76.9009,  name:"Regional Hospital Sundernagar", type:"hospital", warn:"Regional medical center Sundernagar.",                   radius:280,  speedLimit:30, level:2, beds:180 },
+  { id:"h9",  lat:32.2200,  lon:76.3200,  name:"Civil Hospital Palampur",  type:"hospital",  warn:"Civil Hospital Palampur — 24/7 Emergency.",                 radius:250,  speedLimit:30, level:3, beds:80 },
+  { id:"h10", lat:30.4497,  lon:77.5666,  name:"Civil Hospital Poanta Sahib", type:"hospital", warn:"Border medical center Poanta Sahib.",                    radius:250,  speedLimit:30, level:3, beds:100 },
+  { id:"h11", lat:32.5500,  lon:76.1200,  name:"District Hospital Chamba", type:"hospital",  warn:"District Hospital Chamba — Secondary care.",               radius:280,  speedLimit:30, level:2, beds:150 },
+  { id:"h12", lat:31.4700,  lon:76.2700,  name:"Civil Hospital Una",       type:"hospital",  warn:"Civil Hospital Una — Emergency services.",                  radius:250,  speedLimit:30, level:3, beds:90 },
+  { id:"h13", lat:31.5414,  lon:76.8912,  name:"Suket Hospital Sundernagar", type:"hospital", warn:"Suket Hospital — Multi-specialty private facility.",       radius:300,  speedLimit:30, level:2, beds:120 },
+  { id:"h14", lat:31.5385,  lon:76.8950,  name:"Sunder Nagar CH",          type:"hospital",  warn:"Community Health Center — Basic emergency care.",          radius:200,  speedLimit:30, level:3, beds:50 },
 
   // ══════════════════════════════════════════════════════════
   // SCHOOLS (slow to 20 km/h, active 7-9 AM & 1-4 PM)
@@ -139,7 +141,7 @@ export function isZoneActiveNow(zone) {
 
 // ── Zone type metadata ───────────────────────────────────────────
 export const ZONE_META = {
-  hospital: { icon: "🏥", color: "#0097a7", label: "Hospital",    bgColor: "rgba(0,151,167,0.12)" },
+  hospital: { icon: "🏥", color: "#16a34a", label: "Hospital",    bgColor: "rgba(22,163,74,0.12)" },
   school:   { icon: "🏫", color: "#f9ab00", label: "School",      bgColor: "rgba(249,171,0,0.12)"  },
   college:  { icon: "🎓", color: "#7c3aed", label: "College",     bgColor: "rgba(124,58,237,0.12)" },
   police:   { icon: "👮", color: "#1a73e8", label: "Police Naka", bgColor: "rgba(26,115,232,0.12)" },

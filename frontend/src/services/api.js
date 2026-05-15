@@ -38,7 +38,7 @@
 
 const BASE = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_API_URL)
   ? import.meta.env.VITE_API_URL
-  : "http://127.0.0.1:8000";
+  : ""; // Fallback to relative path for Docker/Production
 
 // ── Cache ─────────────────────────────────────────────────────────
 const _cache = new Map();
@@ -258,9 +258,9 @@ export async function predictRisk(params) {
   if (isNaN(payload.vehicles))   payload.vehicles   = 3;
   if (isNaN(payload.visibility)) payload.visibility = 10000;
 
-  payload.speed      = Math.max(0, Math.min(250, payload.speed));
-  payload.vehicles   = Math.max(0, Math.min(100, payload.vehicles));
-  payload.visibility = Math.max(0, Math.min(1000, payload.visibility));
+  payload.speed      = parseFloat(Math.max(0, Math.min(250, payload.speed)));
+  payload.vehicles   = parseFloat(Math.max(0, Math.min(100, payload.vehicles)));
+  payload.visibility = parseFloat(Math.max(0, Math.min(10000, payload.visibility)));
 
   const result = await apiFetch("/api/predict", {
     method: "POST",

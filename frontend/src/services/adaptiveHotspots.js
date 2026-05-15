@@ -267,7 +267,7 @@ export async function seedLearnedHotspotsFromBackend() {
   try {
     const BASE = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_API_URL)
       ? import.meta.env.VITE_API_URL
-      : "http://127.0.0.1:8000";
+      : "";
 
     const res  = await fetch(`${BASE}/api/hotspots/dynamic`, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return;
@@ -321,7 +321,7 @@ export async function seedLearnedHotspotsFromBackend() {
 async function _syncToBackend(record, description) {
   const BASE = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_API_URL)
     ? import.meta.env.VITE_API_URL
-    : "http://127.0.0.1:8000";
+    : "";
 
   await fetch(`${BASE}/api/reports`, {
     method:  "POST",

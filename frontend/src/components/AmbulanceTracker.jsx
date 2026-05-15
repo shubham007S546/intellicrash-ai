@@ -236,7 +236,11 @@ async function fetchRealRisk(lat,lon,speedKph) {
   const params=buildRiskParams(lat,lon,speedKph);
   const{_near,...payload}=params;
   try{
-    const res=await fetch("/api/predict",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const res = await fetch("/api/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
     if(!res.ok) throw new Error("predict failed");
     const d=await res.json();
     return{
@@ -299,7 +303,15 @@ function snapNearestHospital(patientLatLon) {
   , pool[0]);
 }
 
-export default function AmbulanceTracker({ patientPos: propPatientPos, hospitalPos, onClose, sosRequestId }) {
+const AmbulanceTracker = ({ 
+  patientPos: propPatientPos, 
+  hospitalPos,
+  patientName, 
+  severity = "2", 
+  victimRiskScore,
+  onClose 
+}) => {
+
 
   const [gpsPhase, setGpsPhase] = useState("validating");
   const [gpsError, setGpsError] = useState(null);
@@ -592,9 +604,19 @@ export default function AmbulanceTracker({ patientPos: propPatientPos, hospitalP
         <MapContainer center={pPos} zoom={13} style={{height:"100%",width:"100%"}} zoomControl={false}>
           <MapController mapRef={mapRef}/>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
-          {remainCoords.length>1&&<Polyline positions={remainCoords} pathOptions={{color:RC(sc),weight:6}}/>}
+           {remainCoords.length>1&&<Polyline positions={remainCoords} pathOptions={{color:RC(sc),weight:6}}/>}
           <Marker position={pPos} icon={patientIcon}/>
           <Marker position={hPos} icon={hospitalIcon}/>
+
+          {/* Hotspots for emergency awareness */}
+          {HP_HOTSPOTS.map((h, i) => (
+            <Circle 
+              key={`hs_${i}`} 
+              center={[h.lat, h.lon]} 
+              radius={h.risk === "HIGH" ? 500 : 300} 
+              pathOptions={{ color: h.risk === "HIGH" ? "#dc2626" : "#ea580c", fillOpacity: 0.1 }}
+            />
+          ))}
         </MapContainer>
 
         {/* 👮 OFFICER CARD - High Fidelity Aesthetic */}
@@ -623,12 +645,61 @@ export default function AmbulanceTracker({ patientPos: propPatientPos, hospitalP
               <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#ef4444" }}>{speed} km/h</Typography>
             </Box>
           </Box>
-          <Box sx={{ textAlign: "right" }}>
-            <Typography sx={{ fontSize: 18, fontWeight: 950, color: "#2563eb", lineHeight: 1 }}>{Math.ceil((etaSec||0)/60)}</Typography>
-            <Typography sx={{ fontSize: 9, fontWeight: 800, color: "#64748b" }}>MINS</Typography>
+           <Box sx={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Typography sx={{ fontSize: 18, fontWeight: 950, color: "#2563eb", lineHeight: 1 }}>{Math.ceil((etaSec||0)/60)}</Typography>
+              <Typography sx={{ fontSize: 9, fontWeight: 800, color: "#64748b" }}>MINS</Typography>
+            </Box>
+            <IconButton 
+              size="small" 
+              href="tel:108"
+              sx={{ mt: 1, bgcolor: "#2563eb", color: "#fff", "&:hover": { bgcolor: "#1d4ed8" } }}
+            >
+              <Typography sx={{ fontSize: 10, fontWeight: 900, px: 0.5 }}>CALL</Typography>
+            </IconButton>
           </Box>
         </Box>
+
+        {/* 🏥 PATIENT CARD */}
+        <Box sx={{
+          position: "absolute", top: 25, left: "50%", transform: "translateX(-50%)",
+          width: "90%", maxWidth: 380, zIndex: 1000,
+          background: "rgba(255, 255, 255, 0.95)",
+          backdropFilter: "blur(20px)",
+          border: "1px solid rgba(220, 38, 38, 0.3)",
+          borderRadius: "28px",
+          p: 2,
+          display: "flex", gap: 2, alignItems: "center",
+          boxShadow: "0 24px 60px rgba(220, 38, 38, 0.15)"
+        }}>
+          <Box sx={{ 
+            width: 50, height: 50, borderRadius: "15px", 
+            background: "linear-gradient(135deg, #ef4444, #dc2626)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 24, color: "#fff"
+          }}>👤</Box>
+          <Box sx={{ flex: 1 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 900, color: "#0f172a" }}>{patientName || "Emergency Victim"}</Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.3 }}>
+              <Chip 
+                label={severity === "3" || severity === "severe" ? "CRITICAL" : "STABLE"} 
+                size="small" 
+                sx={{ height: 18, fontSize: 9, fontWeight: 900, bgcolor: severity === "3" ? "#fee2e2" : "#f1f5f9", color: severity === "3" ? "#dc2626" : "#64748b" }} 
+              />
+              <Typography sx={{ fontSize: 10, fontWeight: 700, color: "#64748b" }}>📍 {pPos ? `${pPos[0].toFixed(4)}, ${pPos[1].toFixed(4)}` : "Detecting..."}</Typography>
+            </Box>
+          </Box>
+          <Box sx={{ textAlign: "right" }}>
+            <Typography sx={{ fontSize: 10, fontWeight: 800, color: "#dc2626" }}>SEVERITY</Typography>
+            <Typography sx={{ fontSize: 16, fontWeight: 950, color: "#dc2626", lineHeight: 1 }}>
+              {severity === "3" ? "99" : victimRiskScore || "25"}
+            </Typography>
+          </Box>
+        </Box>
+
       </Box>
     </Box>
   );
 }
+
+export default AmbulanceTracker;

@@ -161,7 +161,7 @@ export default function About() {
               <span className="btn-shine" />
             </button>
             <button className="btn-outline" onClick={()=>nav("/predict")}>⚡ Predict Risk</button>
-            <button className="btn-ghost" onClick={()=>window.open("http://localhost:8000/docs","_blank")}>📖 API Docs ↗</button>
+            <button className="btn-ghost" onClick={()=>window.open("/api/docs","_blank")}>📖 API Docs ↗</button>
           </div>
         </div>
 
@@ -319,7 +319,7 @@ export default function About() {
               {[
                 { icon:"📞", text:"9015162007",                        href:"tel:9015162007" },
                 { icon:"✉️", text:"shubhamabhi004@gmail.com",          href:"mailto:shubhamabhi004@gmail.com" },
-                { icon:"🔗", text:"API Documentation → localhost:8000/docs", href:"http://localhost:8000/docs" },
+                { icon: "🔗", text: "API Documentation → /api/docs", href: "/api/docs" },
               ].map(({icon,text,href})=>(
                 <a key={href} href={href} className="contact-link">
                   <span>{icon}</span> {text}

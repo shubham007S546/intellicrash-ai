@@ -48,48 +48,11 @@ def _label_from_polarity(polarity: float, threshold: float = 0.1) -> str:
     return "neutral"
 
 
-# ── Try HuggingFace first (better multilingual), fallback to TextBlob ─────────
-_USE_TRANSFORMERS = False
-_pipeline         = None
-
-try:
-    from transformers import pipeline as hf_pipeline
-    _pipeline = hf_pipeline(
-        "sentiment-analysis",
-        model="lxyuan/distilbert-base-multilingual-cased-sentiments-student",
-        top_k=None,
-    )
-    _USE_TRANSFORMERS = True
-    logger.info("Sentiment: using HuggingFace multilingual model")
-except Exception as _hf_err:
-    logger.info(f"HuggingFace not available ({_hf_err}), trying TextBlob …")
-    try:
-        import textblob
-        # Auto-download corpora if missing
-        try:
-            from textblob import TextBlob
-            TextBlob("test").sentiment          # triggers corpus load
-        except Exception:
-            import subprocess, sys
-            subprocess.run(
-                [sys.executable, "-m", "textblob.download_corpora"],
-                capture_output=True, timeout=60,
-            )
-        logger.info("Sentiment: using TextBlob")
-    except ImportError:
-        logger.warning(
-            "No NLP library found.\n"
-            "  Run: pip install textblob && python -m textblob.download_corpora\n"
-            "  Falling back to keyword heuristic."
-        )
-
-
 def _clean(text: str) -> str:
     """Remove URLs and normalise whitespace."""
     text = re.sub(r"http\S+", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
-
 
 # ── Keyword sets for last-resort heuristic ───────────────────────────────────
 _POS_WORDS = {
@@ -103,38 +66,82 @@ _NEG_WORDS = {
     "frustrating", "disappointing", "issue", "problem", "error",
 }
 
+# ── Try Groq (Ultra-accurate), then Transformers, then TextBlob ────────────────
+import os
+import requests
+import json
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL   = "llama-3.3-70b-versatile"
+
+def _groq_sentiment(text: str) -> dict:
+    if not GROQ_API_KEY:
+        return None
+    try:
+        prompt = f"""
+        Analyze the sentiment of this road safety app review. 
+        Return ONLY a JSON object with: 
+        {{"label": "positive"|"neutral"|"negative", "score": 0-100, "polarity": -1.0 to 1.0}}
+        Review: "{text}"
+        """
+        r = requests.post(
+            GROQ_API_URL,
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": GROQ_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 100,
+                "response_format": {"type": "json_object"}
+            },
+            timeout=5
+        )
+        if r.status_code == 200:
+            data = r.json()
+            res = json.loads(data["choices"][0]["message"]["content"])
+            raw_pol = res.get("polarity", 0.0)
+            raw_scr = res.get("score", 50.0)
+            return {
+                "label": res.get("label", "neutral"),
+                "score": round(max(0.0, min(100.0, float(raw_scr))), 1),
+                "polarity": _safe_polarity(raw_pol),
+                "subjectivity": None,
+                "source": "groq"
+            }
+    except Exception as e:
+        logger.warning(f"Groq sentiment failed: {e}")
+    return None
+
 
 def analyze_sentiment(text: str) -> dict:
     """
     Analyse sentiment of a review string.
-
-    Returns:
-        {
-            "label":       "positive" | "neutral" | "negative",
-            "score":       0–100  (100 = most positive),   ← NEVER NaN
-            "polarity":    -1.0 to 1.0,                    ← NEVER NaN
-            "subjectivity": 0.0 to 1.0  (TextBlob only, else None)
-        }
+    Tries Groq -> Transformers -> TextBlob -> Keywords
     """
     text = _clean(text)
     if not text:
         return {"label": "neutral", "score": 50.0, "polarity": 0.0, "subjectivity": None}
 
-    # ── HuggingFace multilingual ──────────────────────────────────────────────
+    # 1. Groq (Llama-3) - Best for Hindi/English mix
+    res = _groq_sentiment(text)
+    if res: return res
+
+    # 2. HuggingFace multilingual
     if _USE_TRANSFORMERS and _pipeline:
         try:
-            results = _pipeline(text[:512])[0]          # list of {label, score}
+            results = _pipeline(text[:512])[0]
             scores  = {r["label"].lower(): float(r["score"]) for r in results}
             pos     = scores.get("positive", 0.0)
             neg     = scores.get("negative", 0.0)
             polarity = _safe_polarity(pos - neg)
             label    = _label_from_polarity(polarity, threshold=0.15)
             score    = _safe_score(polarity)
-            return {"label": label, "score": score, "polarity": polarity, "subjectivity": None}
+            return {"label": label, "score": score, "polarity": polarity, "subjectivity": None, "source": "transformers"}
         except Exception as _e:
-            logger.warning(f"Transformers inference failed, falling back: {_e}")
+            logger.warning(f"Transformers inference failed: {_e}")
 
-    # ── TextBlob ──────────────────────────────────────────────────────────────
+    # 3. TextBlob
     try:
         from textblob import TextBlob
         blob        = TextBlob(text)
@@ -148,20 +155,20 @@ def analyze_sentiment(text: str) -> dict:
         ) else None
         label = _label_from_polarity(polarity, threshold=0.1)
         score = _safe_score(polarity)
-        return {"label": label, "score": score, "polarity": polarity, "subjectivity": subjectivity}
+        return {"label": label, "score": score, "polarity": polarity, "subjectivity": subjectivity, "source": "textblob"}
     except Exception as _e:
         logger.error(f"TextBlob failed: {_e}")
 
-    # ── Last resort: keyword heuristic ────────────────────────────────────────
+    # 4. Last resort: keyword heuristic
     tokens   = set(text.lower().split())
     pos_hits = len(tokens & _POS_WORDS)
     neg_hits = len(tokens & _NEG_WORDS)
 
     if pos_hits > neg_hits:
-        return {"label": "positive", "score": 70.0, "polarity": 0.4, "subjectivity": None}
+        return {"label": "positive", "score": 70.0, "polarity": 0.4, "subjectivity": None, "source": "keywords"}
     if neg_hits > pos_hits:
-        return {"label": "negative", "score": 30.0, "polarity": -0.4, "subjectivity": None}
-    return {"label": "neutral", "score": 50.0, "polarity": 0.0, "subjectivity": None}
+        return {"label": "negative", "score": 30.0, "polarity": -0.4, "subjectivity": None, "source": "keywords"}
+    return {"label": "neutral", "score": 50.0, "polarity": 0.0, "subjectivity": None, "source": "default"}
 
 
 # ── Quick self-test ───────────────────────────────────────────────────────────

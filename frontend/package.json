@@ -30,6 +30,7 @@
     "react-router-dom": "^6.23.1",
     "react-spring": "^9.7.3",
     "react-webcam": "^7.2.0",
+    "@supabase/supabase-js": "^2.43.4",
     "three": "^0.160.1"
   },
   "devDependencies": {

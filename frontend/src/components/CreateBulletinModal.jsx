@@ -10,6 +10,7 @@ export default function CreateBulletinModal({ isOpen, onClose, onPost }) {
   const [capturedMedia, setCapturedMedia] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   
   const webcamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -88,9 +89,9 @@ export default function CreateBulletinModal({ isOpen, onClose, onPost }) {
     }
   };
 
-  const handleSubmit = () => {
-    if (!title || !description) return;
-    onPost({
+  const handleSubmit = async () => {
+    if (!description) return;
+    await onPost({
       id: Date.now(),
       headline: title,
       description,
@@ -102,12 +103,17 @@ export default function CreateBulletinModal({ isOpen, onClose, onPost }) {
       severity: "moderate",
       source: "community"
     });
-    onClose();
-    // Reset state
+    
+    setIsSuccess(true);
+  };
+
+  const handleFinalClose = () => {
+    setIsSuccess(false);
     setTitle("");
     setDescription("");
     setCapturedMedia(null);
     setMediaType(null);
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -124,16 +130,38 @@ export default function CreateBulletinModal({ isOpen, onClose, onPost }) {
         border: "1px solid var(--border, #e2e8f0)", color: "var(--text-primary, #000)"
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Post to Community</h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{isSuccess ? "Submission Successful" : "Post to Community"}</h2>
+          <button onClick={handleFinalClose} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}>
             <X size={24} />
           </button>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {isSuccess ? (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <div style={{ 
+              width: 80, height: 80, borderRadius: "50%", background: "#22c55e", 
+              color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", 
+              margin: "0 auto 20px", fontSize: 40, boxShadow: "0 10px 25px rgba(34,197,94,0.3)"
+            }}>
+              ✓
+            </div>
+            <p style={{ fontWeight: 800, fontSize: 18, margin: "0 0 8px" }}>Check Complete!</p>
+            <p style={{ color: "var(--text-secondary, #64748b)", fontSize: 14, marginBottom: 24 }}>
+              Your incident report has been posted to the bulletin.
+            </p>
+            <button onClick={handleFinalClose} style={{
+              width: "100%", padding: "14px", borderRadius: 12, border: "none",
+              background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", 
+              fontWeight: 700, cursor: "pointer"
+            }}>
+              Done
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <input
             type="text"
-            placeholder="Title"
+            placeholder="Title (Optional — AI will auto-generate if blank)"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             style={{
@@ -261,6 +289,7 @@ export default function CreateBulletinModal({ isOpen, onClose, onPost }) {
             <Send size={18} /> Post Bulletin
           </button>
         </div>
+        )}
       </div>
     </div>
   );

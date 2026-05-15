@@ -3,7 +3,7 @@ import { Share2, CheckCircle2, X, Trash2 } from "lucide-react";
 import { Typography, Box, IconButton, Tooltip } from "@mui/material";
 import { motion } from "framer-motion";
 
-const BASE = import.meta?.env?.VITE_API_URL ?? "http://127.0.0.1:8000";
+const BASE = import.meta?.env?.VITE_API_URL ?? "";
 
 const CATEGORY_STYLE = {
   ACCIDENT:  { color: "#ef4444", label: "ACCIDENT"  },

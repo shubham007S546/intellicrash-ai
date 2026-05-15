@@ -23,6 +23,7 @@ const {
   TWILIO_SID,
   TWILIO_TOKEN,
   TWILIO_FROM,
+  TWILIO_MESSAGING_SERVICE_SID,
 
   GMAIL_USER,
   GMAIL_PASS,
@@ -38,9 +39,9 @@ function bootCheck() {
   console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("  SafeSignal SOS v8 — Channel Status");
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log(`  Twilio SMS   : ${TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM
-    ? "✅ READY  from=" + TWILIO_FROM
-    : "❌ MISSING — check TWILIO_SID / TWILIO_TOKEN / TWILIO_FROM"}`);
+  console.log(`  Twilio SMS   : ${TWILIO_SID && TWILIO_TOKEN && (TWILIO_FROM || TWILIO_MESSAGING_SERVICE_SID)
+    ? "✅ READY  " + (TWILIO_FROM ? "from=" + TWILIO_FROM : "msgService=" + TWILIO_MESSAGING_SERVICE_SID)
+    : "❌ MISSING — check TWILIO_SID / TWILIO_TOKEN / TWILIO_FROM or TWILIO_MESSAGING_SERVICE_SID"}`);
   console.log(`  Gmail        : ${GMAIL_USER && GMAIL_PASS
     ? "✅ READY  user=" + GMAIL_USER
     : "❌ MISSING — check GMAIL_USER / GMAIL_PASS"}`);
@@ -126,13 +127,17 @@ function bg(label, fn) {
 // ══════════════════════════════════════════════════════════════════
 async function sendSMS(rawTo, text) {
   const to = toE164(rawTo);
-  if (!TWILIO_SID || !TWILIO_TOKEN || !TWILIO_FROM) {
+  if (!TWILIO_SID || !TWILIO_TOKEN || (!TWILIO_FROM && !TWILIO_MESSAGING_SERVICE_SID)) {
     console.warn(`[SMS SKIP] Twilio not configured — to=${to}`);
     return;
   }
   if (!to) { console.warn("[SMS SKIP] Bad number:", rawTo); return; }
 
-  const body = new URLSearchParams({ To: to, From: TWILIO_FROM, Body: text }).toString();
+  const params = { To: to, Body: text };
+  if (TWILIO_FROM) params.From = TWILIO_FROM;
+  else if (TWILIO_MESSAGING_SERVICE_SID) params.MessagingServiceSid = TWILIO_MESSAGING_SERVICE_SID;
+
+  const body = new URLSearchParams(params).toString();
   const auth  = Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64");
 
   return new Promise((resolve, reject) => {
@@ -291,13 +296,17 @@ app.post("/api/sos", (req, res) => {
     lon,
     gpsAccuracy,
     userName,
-    severity   = "HIGH",
-    riskScore  = 50,
+    severity       = "HIGH",
+    riskScore      = 50,
+    priorityScore  = 0,
     message,
     speed,
     isAutoCrash,
     mapsLink,
-    contacts   = [],
+    contacts       = [],
+    voiceTranscript,
+    broadcastNearby,
+    nearestHospital,
   } = req.body;
 
   // ── Validate GPS coords ────────────────────────────────────────
@@ -314,18 +323,24 @@ app.post("/api/sos", (req, res) => {
   const la = parseFloat(lat);
   const lo = parseFloat(lon);
 
-  console.log(`[SOS] ✅ Real GPS received: ${la.toFixed(5)}, ${lo.toFixed(5)} ±${gpsAccuracy || "?"}m from ${userName || "unknown"}`);
-  appendLog({ lat: la, lon: lo, gpsAccuracy, userName, severity, riskScore, isAutoCrash, ts: new Date().toISOString() });
+  console.log(`[SOS] ✅ Real GPS: ${la.toFixed(5)}, ${lo.toFixed(5)} ±${gpsAccuracy || "?"}m`);
+  console.log(`[SOS] Priority Score: ${priorityScore || "N/A"} | Severity: ${severity} | Risk: ${riskScore}`);
+  if (voiceTranscript) console.log(`[SOS] 🎙️ Voice SOS: "${voiceTranscript}"`);
+  if (broadcastNearby) console.log(`[SOS] 📡 Nearby broadcast requested`);
+
+  appendLog({ lat: la, lon: lo, gpsAccuracy, userName, severity, riskScore, priorityScore, isAutoCrash, voiceTranscript, ts: new Date().toISOString() });
 
   const hospitals = nearestHospitals(la, lo);
 
   // Instant ACK
-  res.json({ ok: true, queued: true, hospitals, alertCount: contacts.length });
+  res.json({ ok: true, queued: true, hospitals, alertCount: contacts.length, priorityScore });
 
   const mapUrl  = mapsLink || `https://maps.google.com/?q=${la},${lo}`;
   const accText = gpsAccuracy ? ` (±${gpsAccuracy}m)` : "";
-  const smsBody = `🚨 SOS from ${userName || "Unknown"} | Risk: ${severity} | Speed: ${speed || 0} km/h\nGPS${accText}: ${la.toFixed(5)},${lo.toFixed(5)}\nLocation: ${mapUrl}\nCall 112 NOW!`;
-  const subject = `🚨 SOS from ${userName || "Unknown"} — ${severity} Risk`;
+  const voiceNote = voiceTranscript ? `\n🎙️ Voice: "${voiceTranscript}"` : "";
+  const priorityTag = priorityScore ? ` | Priority: ${priorityScore}` : "";
+  const smsBody = `🚨 SOS from ${userName || "Unknown"} | Risk: ${severity}${priorityTag} | Speed: ${speed || 0} km/h${voiceNote}\nGPS${accText}: ${la.toFixed(5)},${lo.toFixed(5)}\nNearby: ${nearestHospital || "HP Emergency"}\nMap: ${mapUrl}\nCall 112 NOW!`;
+  const subject = `🚨 SOS from ${userName || "Unknown"} — ${severity} Risk (Priority: ${priorityScore || "N/A"})`;
 
   // Notify all contacts via SMS + Email
   for (const c of contacts) {
@@ -333,10 +348,17 @@ app.post("/api/sos", (req, res) => {
     if (c.email) bg(`Email→${c.email}`, () => sendEmail(c.email, subject, { ...req.body, lat: la, lon: lo, mapsLink: mapUrl }));
   }
 
-  // Admin fallback
+  // Admin fallback (HP Ambulance + Admin)
   if (ADMIN_PHONE) bg("SMS→admin",   () => sendSMS(ADMIN_PHONE, smsBody));
   if (ADMIN_EMAIL) bg("Email→admin", () => sendEmail(ADMIN_EMAIL, subject, { ...req.body, lat: la, lon: lo, mapsLink: mapUrl }));
+
+  // Log nearby broadcast request
+  if (broadcastNearby) {
+    console.log(`[SOS BROADCAST] Nearby alert requested — ${la.toFixed(4)}, ${lo.toFixed(4)}`);
+    // Future: send via WebSocket/push to nearby connected drivers
+  }
 });
+
 
 // ── POST /api/send-sms ────────────────────────────────────────────
 app.post("/api/send-sms", (req, res) => {

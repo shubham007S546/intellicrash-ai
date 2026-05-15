@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Box, Typography, TextField, IconButton, Paper, Avatar, Chip } from "@mui/material";
 import { Send, Close, SmartToy, Person, AutoAwesome } from "@mui/icons-material";
 
-const BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const BASE = import.meta.env.VITE_API_URL || ""; // Using empty string to leverage the /api proxy
 const STORAGE_KEY = "intellicrash_chat_session_id";
 const SUGGESTED = [
   "What are the accident hotspots in Shimla?",

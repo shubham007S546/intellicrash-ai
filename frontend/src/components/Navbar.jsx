@@ -164,10 +164,14 @@ export default function Navbar() {
 
   const isActive = (path) => location.pathname === path;
 
+  const triggerSOS = () => {
+    window.dispatchEvent(new CustomEvent("trigger_intellicrash_sos"));
+  };
+
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Clash+Display:wght@700&family=Satoshi:wght@400;500;600;700;800&display=swap');
+        @import url('https://api.fontshare.com/v2/css?f[]=clash-display@700&f[]=satoshi@400,500,600,700,800&display=swap');
         @keyframes icMenuPop { from{opacity:0;transform:translateY(-8px) scale(.97)} to{opacity:1;transform:none} }
         @keyframes icNavIn   { from{opacity:0;transform:translateY(-14px)} to{opacity:1;transform:none} }
 
@@ -198,6 +202,31 @@ export default function Navbar() {
           box-shadow:0 4px 14px rgba(255,77,0,.28); transition:all .18s; white-space:nowrap;
         }
         .ic7-signup-btn:hover { transform:translateY(-2px); box-shadow:0 8px 22px rgba(255,77,0,.44); }
+
+        .ic7-sos-btn {
+          display: flex; align-items: center; gap: 8px;
+          padding: 8px 18px; border-radius: 36px; border: none;
+          background: linear-gradient(135deg, #ff3d00, #d50000);
+          color: #fff; font-size: 13px; font-weight: 800; cursor: pointer;
+          font-family: 'Satoshi', sans-serif;
+          box-shadow: 0 4px 14px rgba(255, 61, 0, 0.35);
+          transition: all .18s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+          animation: sosPulseSmall 2s infinite;
+        }
+        .ic7-sos-btn:hover { transform: translateY(-2px) scale(1.05); box-shadow: 0 8px 22px rgba(255, 61, 0, 0.5); }
+        .ic7-sos-btn:active { transform: scale(0.95); }
+
+        @keyframes sosPulseSmall {
+          0% { box-shadow: 0 0 0 0 rgba(255, 61, 0, 0.5); }
+          70% { box-shadow: 0 0 0 8px rgba(255, 61, 0, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(255, 61, 0, 0); }
+        }
+
+        @keyframes sosPulseSmall {
+          0% { box-shadow: 0 0 0 0 rgba(255, 61, 0, 0.5); }
+          70% { box-shadow: 0 0 0 8px rgba(255, 61, 0, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(255, 61, 0, 0); }
+        }
 
         @media(max-width:960px) {
           .ic7-desktop { display:none !important; }
@@ -236,7 +265,7 @@ export default function Navbar() {
                   <div style={{ fontFamily: "'Clash Display',sans-serif", fontWeight: 700, fontSize: 17, color: "var(--text-primary)", lineHeight: 1 }}>
                     Intelli<span style={{ color: "var(--accent)" }}>Crash</span>
                   </div>
-                  <div style={{ fontSize: 8.5, color: "var(--accent)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>iRAD 2025-26</div>
+                  <div style={{ fontSize: 8.5, color: "var(--accent)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>iRAD 2020-25</div>
                 </div>
               </button>
 
@@ -267,6 +296,7 @@ export default function Navbar() {
                   )}
                 </div>
               </div>
+
 
               {/* Mobile hamburger */}
               <div className="ic7-mobile-btn" style={{ display: "none", alignItems: "center", flexShrink: 0 }}>
@@ -320,6 +350,7 @@ export default function Navbar() {
           );
         })}
         <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
+
         {user ? (
           <div>
             <div style={{ fontSize: 12, color: "#9898a8", marginBottom: 10, fontFamily: "'Satoshi',sans-serif" }}>

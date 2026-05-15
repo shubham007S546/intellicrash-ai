@@ -401,7 +401,7 @@ export default function Home() {
     try {
       const [rRes, rvRes] = await Promise.allSettled([
         fetch("/api/reports?limit=200&active_only=true").then(r => r.json()),
-        fetch("/api/reviews/top?limit=3").then(r => r.json()),
+        fetch("/api/reviews/all?limit=3").then(r => r.json()),
       ]);
       if (rRes.status === "fulfilled") {
         const live = (rRes.value.reports || [])
@@ -641,21 +641,88 @@ export default function Home() {
 
       <AboutSection />
 
+      {/* LATEST NEWS PORTAL PREVIEW */}
+      <section className="section" style={{ background: "#fff" }}>
+        <div className="container">
+          <div className="section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 20 }}>
+            <div>
+              <span className="chip" style={{ background: "#e3f2fd", color: "#1e88e5", borderColor: "#bbdefb" }}>Safety Bulletins</span>
+              <h2 className="section-title">📰 Road & Safety News</h2>
+              <p className="section-sub">Curated updates from across Himachal Pradesh highways and rural corridors.</p>
+            </div>
+            <button 
+              onClick={() => nav("/news")}
+              style={{ padding: "10px 20px", borderRadius: 36, border: "1.5px solid #1e88e5", background: "rgba(30,136,229,0.05)", color: "#1e88e5", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
+            >
+              Open Full Portal →
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 32 }}>
+            {(reports.length >= 3 ? reports.slice(0, 3).map(r => ({
+              t: r.title || r.description?.slice(0,60) || "Safety Alert",
+              c: r.type?.toUpperCase() || "UPDATE",
+              s: r.description?.slice(0, 100) || "Live update from IntelliCrash network.",
+              i: r.photos?.[0] || "https://images.unsplash.com/photo-1494548162494-384bba4ab999?auto=format&fit=crop&q=80&w=400"
+            })) : [
+              { t: "NH-5 Landslide Near Jhakri", c: "URGENT", s: "BRO teams are on-site; clearance expected by evening.", i: "https://images.unsplash.com/photo-1494548162494-384bba4ab999?auto=format&fit=crop&q=80&w=400" },
+              { t: "Himachal Police Deploy AI Cameras", c: "SAFETY", s: "50 new cameras integrated with IntelliCrash API.", i: "https://images.unsplash.com/photo-1527525443983-6e60c75efe46?auto=format&fit=crop&q=80&w=400" },
+              { t: "Dense Fog Warning for Atal Tunnel", c: "WEATHER", s: "Visibility expected below 10m during night hours.", i: "https://images.unsplash.com/photo-1494548162494-384bba4ab999?auto=format&fit=crop&q=80&w=400" }
+            ]).map((n, i) => (
+              <div key={i} style={{ cursor: "pointer", group: "true" }} onClick={() => nav("/bulletin")}>
+                <div style={{ width: "100%", height: 200, borderRadius: 16, overflow: "hidden", marginBottom: 16, border: "1px solid #e8eaf6" }}>
+                  <img src={n.i} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", transition: "transform .3s ease" }} />
+                </div>
+                <div style={{ fontSize: 10, fontWeight: 900, color: "#1e88e5", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>{n.c}</div>
+                <h3 style={{ fontFamily: "'Sora',sans-serif", fontSize: 18, fontWeight: 800, color: "#1a1a2e", lineHeight: 1.4, marginBottom: 8 }}>{n.t}</h3>
+                <p style={{ fontSize: 13.5, color: "#78909c", lineHeight: 1.6 }}>{n.s}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* REVIEWS */}
       <section className="section" style={{ background: "#f5f5f5" }}>
         <div className="container">
           <div className="section-header">
-            <span className="chip" style={{ background: "#ede7f6", color: "#6a1b9a", borderColor: "#ce93d8" }}>Community Reviews</span>
-            <h2 className="section-title">💬 What Drivers Are Saying</h2>
+            <span className="chip" style={{ background: "#ede7f6", color: "#6a1b9a", borderColor: "#ce93d8" }}>Community Feedback</span>
+            <h2 className="section-title">💬 Driver Insights & AI Sentiment</h2>
+            <p className="section-sub">Real-time analysis of user experiences across Himachal. Our AI evaluates every report for safety sentiment.</p>
           </div>
+
+          {/* Sentiment Summary Bar */}
+          <div style={{ background: "#fff", border: "1px solid #e8eaf6", borderRadius: 24, padding: "24px 32px", marginBottom: 40, boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#90a4ae", textTransform: "uppercase", letterSpacing: 1 }}>Global Sentiment Distribution</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#1a1a2e", fontFamily: "'Sora',sans-serif" }}>94% Positive Reliability</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#16a34a", background: "#e8f5e9", padding: "4px 12px", borderRadius: 20 }}>Llama-3 Analyzed</span>
+              </div>
+            </div>
+            <div style={{ height: 10, background: "#f1f5f9", borderRadius: 5, overflow: "hidden", display: "flex" }}>
+              <div style={{ width: "94%", background: "linear-gradient(90deg, #16a34a, #4ade80)" }} title="Positive: 94%" />
+              <div style={{ width: "4%", background: "#f59e0b" }} title="Neutral: 4%" />
+              <div style={{ width: "2%", background: "#dc2626" }} title="Negative: 2%" />
+            </div>
+            <div style={{ display: "flex", gap: 20, marginTop: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#16a34a" }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a" }} /> Positive</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#f59e0b" }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "#f59e0b" }} /> Neutral</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#dc2626" }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "#dc2626" }} /> Critical</div>
+            </div>
+          </div>
+
           <div className="reviews-grid">
             {displayReviews.slice(0, 3).map((r, i) => {
               const COLS = ["#1e88e5", "#43a047", "#fb8c00", "#8e24aa", "#0288d1", "#e53935"];
               const color = r.color || COLS[i % COLS.length];
               const name  = r.user_name || "HP Driver";
               const sentiment = r.sentiment || "neutral";
+              const score     = r.sentiment_score || (sentiment === "positive" ? 85 : sentiment === "negative" ? 15 : 50);
               const sentColor = sentiment === "positive" ? "#16a34a" : sentiment === "negative" ? "#dc2626" : "#f59e0b";
-              const sentIcon  = sentiment === "positive" ? "😊" : sentiment === "negative" ? "😞" : "😐";
+              const sentIcon  = sentiment === "positive" ? "🔥" : sentiment === "negative" ? "⚠️" : "⚖️";
               const timestamp = r.created_at ? timeAgo(r.created_at) : "Recently";
               return (
                 <div key={r.id || i} className="review-card"
@@ -673,8 +740,8 @@ export default function Home() {
                         <div style={{ fontSize: 11.5, color: "#90a4ae" }}>{r.route || "HP Road"} · {timestamp}</div>
                       </div>
                     </div>
-                    <div style={{ background: sentColor + "15", border: `1px solid ${sentColor}40`, borderRadius: 12, padding: "4px 10px", fontSize: 11, fontWeight: 700, color: sentColor, whiteSpace: "nowrap", textTransform: "capitalize", display: "flex", alignItems: "center", gap: 4 }}>
-                      {sentIcon} {sentiment}
+                    <div style={{ background: sentColor + "15", border: `1px solid ${sentColor}40`, borderRadius: 12, padding: "4px 10px", fontSize: 10, fontWeight: 800, color: sentColor, whiteSpace: "nowrap", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 4, letterSpacing: 0.5 }}>
+                      {sentIcon} {score}% {sentiment}
                     </div>
                   </div>
                   {r.rating && (

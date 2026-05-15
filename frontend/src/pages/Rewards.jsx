@@ -12,21 +12,13 @@
  * ✅ No dummy data — all from real Supabase login
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Box, Typography, LinearProgress, Chip, Snackbar, Alert } from "@mui/material";
 
 // ── Unified gamification store (same as Navigation.jsx uses) ─────
-import {
-  loadGM, saveGM,
-  awardPoints,
-  doCheckin,
-  checkAndUnlockBadges,
-  deductPoints,
-  resolveUserEmail,
-  getUserKey,
-  BADGES as GM_BADGES,
-} from "../services/gamification";
+import { loadGM, saveGM, awardPoints, doCheckin, checkAndUnlockBadges, deductPoints, resolveUserEmail, getUserKey, BADGES as GM_BADGES } from "../services/gamification";
+import { getSessions } from "../services/api";
 
 // ─── EmailJS (confirmed keys) ────────────────────────────────────
 const EMAILJS_SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID;
@@ -198,6 +190,8 @@ export default function Rewards() {
   const [emailModal, setEmailModal] = useState(null);
   const [emailInput, setEmailInput] = useState("");
   const [sending,    setSending]    = useState(false);
+  const [sessions,   setSessions]   = useState([]);
+  const [tripsLoading, setTripsLoading] = useState(false);
   const [newBadge,   setNewBadge]   = useState(null);
   const [xpPop,      setXpPop]      = useState(null);
   const [prevLevel,  setPrevLevel]  = useState(null);
@@ -222,6 +216,12 @@ export default function Rewards() {
     const data = loadGM(userEmail);
     setGMState(data);
     setEmailInput(data.userEmail || userEmail || "shubhamabhi004@gmail.com");
+
+    // Fetch real sessions from DB
+    setTripsLoading(true);
+    getSessions().then(d => {
+      setSessions(Array.isArray(d) ? d : (d.sessions || []));
+    }).finally(() => setTripsLoading(false));
   }, [authReady, userEmail]);
 
   // ── Poll for updates every 3s (so nav points appear instantly) ─
@@ -373,9 +373,10 @@ export default function Rewards() {
 
   const TABS = [
     { id:"overview", label:"Overview", icon:"📊" },
+    { id:"trips",    label:"My Trips", icon:"🚗" },
     { id:"badges",   label:"Badges",   icon:"🎖️"  },
     { id:"redeem",   label:"Redeem",   icon:"🎁"  },
-    { id:"history",  label:"History",  icon:"🧾"  },
+    { id:"history",  label:"Redemptions",  icon:"🧾"  },
   ];
 
   return (
@@ -769,6 +770,52 @@ export default function Rewards() {
           </Box>
         )}
 
+        {/* ══ TRIPS ═══════════════════════════════════════════════ */}
+        {tab==="trips" && (
+          <Box>
+            <SLabel>Your Navigation History</SLabel>
+            {tripsLoading ? (
+              <LinearProgress sx={{ borderRadius:4, mb:2 }} />
+            ) : !sessions.length ? (
+              <Card sx={{ textAlign:"center", py:4 }}>
+                <Typography sx={{ fontSize:40, mb:1.5 }}>🛣️</Typography>
+                <Typography sx={{ fontWeight:700, fontSize:15, color:T.text, mb:0.5 }}>No trips recorded</Typography>
+                <Typography sx={{ fontSize:13, color:T.textSub, mb:2 }}>Complete a navigation session to see it here.</Typography>
+                <button onClick={() => navigate("/navigation")} style={{
+                  padding:"10px 24px", border:"none", borderRadius:28,
+                  background:"linear-gradient(135deg,#f97316,#ea4335)",
+                  color:"#fff", fontWeight:800, fontSize:14, cursor:"pointer",
+                  fontFamily:"'DM Sans',sans-serif" }}>
+                  🧭 Start Now
+                </button>
+              </Card>
+            ) : (
+              <Box sx={{ display:"flex", flexDirection:"column", gap:1.5 }}>
+                {sessions.map((s, i) => (
+                  <Card key={i} sx={{ "&:hover": { transform: "translateY(-2px)" } }}>
+                    <Box sx={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography sx={{ fontWeight:800, fontSize:15, color:T.text }}>
+                          {s.trip_from || "Start"} → {s.trip_to || "Destination"}
+                        </Typography>
+                        <Typography sx={{ fontSize:12, color:T.textSub, mt:0.3 }}>
+                          {s.timestamp?.slice(0,10)} · {s.distance_km?.toFixed(1)} km · {s.duration_min?.toFixed(0)} min
+                        </Typography>
+                      </Box>
+                      <Box sx={{ textAlign: "right", ml: 2 }}>
+                        <Typography sx={{ fontSize:10, color:T.textMute, fontWeight:700 }}>SCORE</Typography>
+                        <Typography sx={{ fontWeight:900, fontSize:22, color: s.driver_score >= 80 ? T.green : T.orange }}>
+                          {Math.round(s.driver_score || 0)}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Card>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+
         {/* ══ REDEEM ══════════════════════════════════════════════ */}
         {tab==="redeem" && (
           <Box>
@@ -847,10 +894,10 @@ export default function Rewards() {
           </Box>
         )}
 
-        {/* ══ HISTORY ════════════════════════════════════════════ */}
+        {/* ══ REDEMPTIONS ══════════════════════════════════════════ */}
         {tab==="history" && (
           <Box>
-            <SLabel>Redemption History</SLabel>
+            <SLabel>Coupon History</SLabel>
             {!(gm.redemptions?.length) ? (
               <Card sx={{ textAlign:"center", py:4 }}>
                 <Typography sx={{ fontSize:40, mb:1.5 }}>🎁</Typography>
